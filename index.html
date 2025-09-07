@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>VR Garden Room – 10m x 10m</title>
+  <title>VR Garden Room – with Animals</title>
   <style>
     html, body { margin:0; height:100%; background:#0a0c10; color:#e6eefc; }
     #overlay {
@@ -19,7 +19,7 @@
   <div id="overlay">
     <div class="panel">
       <div><strong>VR Garden Room</strong> · Left stick: move · Grip: grab cube</div>
-      <div class="small">10×10×3 m room, indoor meadow + pond + skylight 🌿</div>
+      <div class="small">10×10×3 m room, indoor meadow + pond + skylight + animals 🐿️🐕</div>
     </div>
   </div>
 
@@ -39,12 +39,10 @@
     import { XRControllerModelFactory } from 'https://unpkg.com/three@0.160.0/examples/jsm/webxr/XRControllerModelFactory.js';
 
     // ===== Config =====
-    const ROOM_SIZE = 10;      // meters (X & Z)
-    const ROOM_HEIGHT = 3;     // meters (Y)
-    const HALF = ROOM_SIZE / 2;
-    const CLAMP_MARGIN = 0.35; // keep player away from walls
-    const GARDEN_RADIUS = 4.0; // meters
-    const POND_RADIUS = 1.2;   // meters
+    const ROOM_SIZE = 10, ROOM_HEIGHT = 3, HALF = ROOM_SIZE/2;
+    const CLAMP_MARGIN = 0.35;
+    const GARDEN_RADIUS = 4.0;
+    const POND_RADIUS = 1.2;
 
     // ===== Renderer & scene =====
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
@@ -76,7 +74,7 @@
     sun.castShadow = true;
     scene.add(sun);
 
-    // Soft “skylight panel” to brighten the garden
+    // Skylight panel
     const skylightPanel = new THREE.Mesh(
       new THREE.PlaneGeometry(2.6, 1.6),
       new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped:false })
@@ -85,34 +83,18 @@
     skylightPanel.position.set(0, ROOM_HEIGHT - 0.05, 0);
     scene.add(skylightPanel);
 
-    // ===== Textures =====
+    // ===== Textures (optional) =====
     const texLoader = new THREE.TextureLoader();
+    const soilAlbedo = texLoader.load('textures/ground_albedo.jpg', t=>{ t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(3,3); }, undefined, ()=>{});
+    const soilNormal = texLoader.load('textures/ground_normal.jpg', t=>{ t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(3,3); }, undefined, ()=>{});
+    const soilRough  = texLoader.load('textures/ground_rough.jpg',  t=>{ t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(3,3); }, undefined, ()=>{});
 
-    // Optional sky: visible through the skylight + used for PBR environment
-    (function setupSky(){
-      texLoader.load('textures/sky.jpg', (t)=>{
-        t.mapping = THREE.EquirectangularReflectionMapping;
-        t.colorSpace = THREE.SRGBColorSpace;
-        // Use as environment; keep walls to hide horizon band
-        scene.background = t;
-        scene.environment = t;
-      }, undefined, ()=>{/* no sky.jpg? no problem */});
-    })();
+    // ===== Room: floor/walls/ceiling with skylight hole =====
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_SIZE, ROOM_SIZE), new THREE.MeshStandardMaterial({ color: 0x2d3138, roughness: 0.95 }));
+    floor.rotation.x = -Math.PI/2; scene.add(floor);
 
-    // ===== Room: floor, ceiling with skylight hole, walls =====
-    // Floor is flat, the “garden disk” sits on top for a raised meadow look.
-    const floorMat = new THREE.MeshStandardMaterial({ color: 0x2d3138, roughness: 0.95, metalness: 0 });
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_SIZE, ROOM_SIZE), floorMat);
-    floor.rotation.x = -Math.PI/2;
-    scene.add(floor);
-
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0xe8eaee, roughness: 0.92, metalness: 0.0 });
-    function makeWall(width, height, x, z, rotY) {
-      const wall = new THREE.Mesh(new THREE.PlaneGeometry(width, height), wallMat);
-      wall.position.set(x, height/2, z);
-      wall.rotation.y = rotY;
-      return wall;
-    }
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0xe8eaee, roughness: 0.92 });
+    function makeWall(w,h,x,z,rotY){ const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h), wallMat); m.position.set(x,h/2,z); m.rotation.y=rotY; return m; }
     scene.add(
       makeWall(ROOM_SIZE, ROOM_HEIGHT,  HALF, 0, -Math.PI/2),
       makeWall(ROOM_SIZE, ROOM_HEIGHT, -HALF, 0,  Math.PI/2),
@@ -120,191 +102,235 @@
       makeWall(ROOM_SIZE, ROOM_HEIGHT, 0, -HALF,  0)
     );
 
-    // Ceiling with a rectangular skylight hole (4m x 2.5m)
+    // Ceiling with rectangular skylight
     (function makeCeilingWithSkylight(){
       const outer = new THREE.Shape();
-      outer.moveTo(-HALF, -HALF);
-      outer.lineTo( HALF, -HALF);
-      outer.lineTo( HALF,  HALF);
-      outer.lineTo(-HALF,  HALF);
-      outer.lineTo(-HALF, -HALF);
-
-      const hole = new THREE.Path();
-      const sx=2.0, sz=1.25;
-      hole.moveTo(-sx, -sz);
-      hole.lineTo( sx, -sz);
-      hole.lineTo( sx,  sz);
-      hole.lineTo(-sx,  sz);
-      hole.lineTo(-sx, -sz);
+      outer.moveTo(-HALF, -HALF); outer.lineTo( HALF, -HALF); outer.lineTo( HALF,  HALF); outer.lineTo(-HALF,  HALF); outer.closePath();
+      const hole = new THREE.Path(); const sx=2.0, sz=1.25;
+      hole.moveTo(-sx,-sz); hole.lineTo(sx,-sz); hole.lineTo(sx,sz); hole.lineTo(-sx,sz); hole.closePath();
       outer.holes.push(hole);
-
-      const shapeGeo = new THREE.ShapeGeometry(outer, 1);
-      const ceiling = new THREE.Mesh(shapeGeo, new THREE.MeshStandardMaterial({ color: 0xdfe3ea, roughness: 0.96 }));
-      ceiling.rotation.x = Math.PI/2; // XY -> horizontal
-      ceiling.position.y = ROOM_HEIGHT;
-      scene.add(ceiling);
+      const ceiling = new THREE.Mesh(new THREE.ShapeGeometry(outer, 1), new THREE.MeshStandardMaterial({ color: 0xdfe3ea, roughness: 0.96 }));
+      ceiling.rotation.x = Math.PI/2; ceiling.position.y = ROOM_HEIGHT; scene.add(ceiling);
     })();
 
-    // ===== Garden disk (textured ground) =====
-    const soilAlbedo = texLoader.load('textures/ground_albedo.jpg', t => { t.colorSpace = THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(3,3); }, undefined, ()=>{});
-    const soilNormal = texLoader.load('textures/ground_normal.jpg', t => { t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(3,3); }, undefined, ()=>{});
-    const soilRough  = texLoader.load('textures/ground_rough.jpg',  t => { t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(3,3); }, undefined, ()=>{});
-
+    // ===== Garden disk =====
     const gardenMat = new THREE.MeshStandardMaterial({
       map: soilAlbedo || null,
       normalMap: soilNormal || null,
       roughnessMap: soilRough || null,
       color: soilAlbedo ? 0xffffff : 0x37403a,
-      metalness: 0.0,
-      roughness: 1.0
+      metalness: 0.0, roughness: 1.0
     });
     const garden = new THREE.Mesh(new THREE.CircleGeometry(GARDEN_RADIUS, 64), gardenMat);
-    garden.rotation.x = -Math.PI/2;
-    garden.position.y = 0.01; // sit above floor a hair
-    scene.add(garden);
+    garden.rotation.x = -Math.PI/2; garden.position.y = 0.01; scene.add(garden);
 
-    // ===== Pond with animated normal =====
+    // ===== Pond =====
     const waterNormal = texLoader.load('textures/water_normal.jpg', t=>{ t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(3,3); }, undefined, ()=>{});
-    const pondMat = new THREE.MeshStandardMaterial({
-      color: 0x224463,
-      roughness: 0.25,
-      metalness: 0.05,
-      normalMap: waterNormal || null,
-      envMapIntensity: 0.6,
-      transparent: true,
-      opacity: 0.98
-    });
+    const pondMat = new THREE.MeshStandardMaterial({ color: 0x224463, roughness: 0.25, metalness: 0.05, normalMap: waterNormal || null, transparent:true, opacity:0.98, envMapIntensity:0.6 });
     const pond = new THREE.Mesh(new THREE.CircleGeometry(POND_RADIUS, 48), pondMat);
-    pond.rotation.x = -Math.PI/2;
-    pond.position.set(0, 0.012, 0);
-    pond.receiveShadow = true;
-    scene.add(pond);
-
+    pond.rotation.x = -Math.PI/2; pond.position.set(0,0.012,0); pond.receiveShadow = true; scene.add(pond);
     let waterTime = 0;
-    function tickWater(dt){
-      if (!pondMat.normalMap) return;
-      waterTime += dt * 0.05;
-      pondMat.normalMap.offset.set(waterTime, waterTime*0.7);
-    }
+    function tickWater(dt){ if(!pondMat.normalMap) return; waterTime += dt*0.05; pondMat.normalMap.offset.set(waterTime, waterTime*0.7); }
 
-    // ===== Trees (low-poly, textured if bark/leaves exist) =====
+    // ===== Trees =====
     const barkTex   = texLoader.load('textures/bark.jpg',   t=>{ t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; }, undefined, ()=>{});
     const leavesTex = texLoader.load('textures/leaves.jpg', t=>{ t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; }, undefined, ()=>{});
-
     function makeTree(scale=1){
       const trunk = new THREE.Mesh(
         new THREE.CylinderGeometry(0.06*scale, 0.09*scale, 0.9*scale, 6),
-        new THREE.MeshStandardMaterial({ map: barkTex || null, color: barkTex?0xffffff:0x6d4b3b, roughness:0.9 })
-      );
-      trunk.position.y = 0.45*scale;
-
+        new THREE.MeshStandardMaterial({ map: barkTex||null, color: barkTex?0xffffff:0x6d4b3b, roughness:0.9 })
+      ); trunk.position.y=0.45*scale;
       const crown = new THREE.Mesh(
         new THREE.ConeGeometry(0.55*scale, 1.1*scale, 8),
-        new THREE.MeshStandardMaterial({ map: leavesTex || null, color: leavesTex?0xffffff:0x2d6b4e, roughness:0.6 })
-      );
-      crown.position.y = 1.25*scale;
-
-      const g = new THREE.Group();
-      g.add(trunk, crown);
-      return g;
+        new THREE.MeshStandardMaterial({ map: leavesTex||null, color: leavesTex?0xffffff:0x2d6b4e, roughness:0.6 })
+      ); crown.position.y=1.25*scale;
+      const g=new THREE.Group(); g.add(trunk,crown); return g;
     }
-
-    function placeTree(x,z,scale){
-      // Keep inside garden and away from pond
-      if (Math.hypot(x,z) > GARDEN_RADIUS - 0.3) return null;
-      if (Math.hypot(x-0,z-0) < POND_RADIUS + 0.5) return null;
-      const t = makeTree(scale);
-      t.position.set(x, 0, z);
-      t.rotation.y = Math.random()*Math.PI*2;
-      scene.add(t);
-      return t;
-    }
+    function placeTree(x,z,s){ if(Math.hypot(x,z)>GARDEN_RADIUS-0.3) return; if(Math.hypot(x,z)<POND_RADIUS+0.5) return; const t=makeTree(s); t.position.set(x,0,z); t.rotation.y=Math.random()*Math.PI*2; scene.add(t); }
     placeTree(-1.8,  1.2, 1.0);
     placeTree( 2.0, -1.5, 0.9);
     placeTree( 0.8,  2.4, 0.75);
 
-    // ===== Grass (instanced blades within garden disk, not in pond) =====
-    (function scatterGrass(count=700){
-      const bladeGeo = new THREE.PlaneGeometry(0.06, 0.28);
-      bladeGeo.translate(0, 0.14, 0);
-      const bladeMat = new THREE.MeshStandardMaterial({
-        color: 0x3a7a4a,
-        roughness: 0.8,
-        side: THREE.DoubleSide
-      });
+    // ===== Grass (instanced) =====
+    (function scatterGrass(count=600){
+      const bladeGeo = new THREE.PlaneGeometry(0.06, 0.28); bladeGeo.translate(0,0.14,0);
+      const bladeMat = new THREE.MeshStandardMaterial({ color: 0x3a7a4a, roughness: 0.8, side: THREE.DoubleSide });
       const blades = new THREE.InstancedMesh(bladeGeo, bladeMat, count);
-      const dummy = new THREE.Object3D();
-      let i = 0;
-      while (i < count) {
-        // sample within garden disk
-        const r = Math.sqrt(Math.random()) * (GARDEN_RADIUS - 0.2);
-        const a = Math.random() * Math.PI*2;
-        const x = Math.cos(a)*r;
-        const z = Math.sin(a)*r;
-        if (Math.hypot(x, z) < POND_RADIUS + 0.25) continue; // avoid pond
-        dummy.position.set(x, 0.011, z);
+      const dummy = new THREE.Object3D(); let i=0;
+      while(i<count){
+        const r = Math.sqrt(Math.random())*(GARDEN_RADIUS-0.2); const a = Math.random()*Math.PI*2;
+        const x = Math.cos(a)*r, z=Math.sin(a)*r;
+        if (Math.hypot(x,z) < POND_RADIUS + 0.25) continue;
+        dummy.position.set(x,0.011,z);
         dummy.rotation.y = Math.random()*Math.PI*2;
-        const s = 0.8 + Math.random()*0.6;
-        dummy.scale.set(s, 0.9 + Math.random()*0.6, s);
-        dummy.updateMatrix();
-        blades.setMatrixAt(i, dummy.matrix);
-        i++;
+        const s = 0.8 + Math.random()*0.6; dummy.scale.set(s, 0.9+Math.random()*0.6, s);
+        dummy.updateMatrix(); blades.setMatrixAt(i, dummy.matrix); i++;
       }
-      blades.instanceMatrix.needsUpdate = true;
-      scene.add(blades);
+      blades.instanceMatrix.needsUpdate = true; scene.add(blades);
     })();
 
-    // ===== Whiteboard for visual anchor =====
-    const board = new THREE.Mesh(
-      new THREE.PlaneGeometry(2.2, 1.1),
-      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 })
-    );
-    board.position.set(0, 1.5, -HALF + 0.01);
-    scene.add(board);
+    // ===== Whiteboard =====
+    const board = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 1.1), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 }));
+    board.position.set(0, 1.5, -HALF + 0.01); scene.add(board);
 
     // ===== Player rig & controllers =====
-    const rig = new THREE.Group();
-    rig.position.set(0, 0, 0);
-    scene.add(rig);
-    rig.add(camera);
-
+    const rig = new THREE.Group(); rig.position.set(0,0,0); scene.add(rig); rig.add(camera);
     const controllerModelFactory = new XRControllerModelFactory();
-    const controller1 = renderer.xr.getController(0);
-    const controller2 = renderer.xr.getController(1);
+    const controller1 = renderer.xr.getController(0), controller2 = renderer.xr.getController(1);
     rig.add(controller1, controller2);
-
-    const grip1 = renderer.xr.getControllerGrip(0);
-    const grip2 = renderer.xr.getControllerGrip(1);
-    grip1.add(controllerModelFactory.createControllerModel(grip1));
-    grip2.add(controllerModelFactory.createControllerModel(grip2));
+    const grip1 = renderer.xr.getControllerGrip(0), grip2 = renderer.xr.getControllerGrip(1);
+    grip1.add(controllerModelFactory.createControllerModel(grip1)); grip2.add(controllerModelFactory.createControllerModel(grip2));
     rig.add(grip1, grip2);
 
-    // Grabbable cube (debug)
-    const cube = new THREE.Mesh(
-      new THREE.BoxGeometry(0.3, 0.3, 0.3),
-      new THREE.MeshStandardMaterial({ color: 0x86e1ff, roughness: 0.3 })
-    );
-    cube.position.set(0.6, 1.0, -0.8);
-    scene.add(cube);
-
+    // Debug cube
+    const cube = new THREE.Mesh(new THREE.BoxGeometry(0.3,0.3,0.3), new THREE.MeshStandardMaterial({ color: 0x86e1ff, roughness: 0.3 }));
+    cube.position.set(0.6,1.0,-0.8); scene.add(cube);
     let grabbedBy = null;
-    function tryGrab(ctrl){
-      if (grabbedBy) return;
-      const p = new THREE.Vector3();
-      ctrl.getWorldPosition(p);
-      if (p.distanceTo(cube.position) < 0.25) grabbedBy = ctrl;
+    function tryGrab(ctrl){ if(grabbedBy) return; const p=new THREE.Vector3(); ctrl.getWorldPosition(p); if(p.distanceTo(cube.position)<0.25) grabbedBy=ctrl; }
+    function tryRelease(ctrl){ if(grabbedBy===ctrl) grabbedBy=null; }
+    [controller1,controller2].forEach(c=>{ c.addEventListener('squeezestart',()=>tryGrab(c)); c.addEventListener('squeezeend',()=>tryRelease(c)); });
+
+    // ===== Animals =====
+    const agents = [];
+    // Utility: pick random point inside garden, avoiding pond
+    function randomGardenPoint(){
+      for(let i=0;i<50;i++){
+        const r = Math.sqrt(Math.random())*(GARDEN_RADIUS-0.25);
+        const a = Math.random()*Math.PI*2;
+        const x = Math.cos(a)*r, z = Math.sin(a)*r;
+        if (Math.hypot(x,z) > POND_RADIUS + 0.35) return new THREE.Vector3(x,0,z);
+      }
+      return new THREE.Vector3(0,0,GARDEN_RADIUS-0.5);
     }
-    function tryRelease(ctrl){ if (grabbedBy === ctrl) grabbedBy = null; }
-    [controller1, controller2].forEach(c=>{
-      c.addEventListener('squeezestart', ()=>tryGrab(c));
-      c.addEventListener('squeezeend', ()=>tryRelease(c));
-    });
+    function makeAgent(mesh, opts){
+      const a = {
+        obj: mesh,
+        pos: new THREE.Vector3().copy(mesh.position),
+        vel: new THREE.Vector3(),
+        target: randomGardenPoint(),
+        maxSpeed: opts.maxSpeed ?? 0.9,
+        accel: opts.accel ?? 2.0,
+        turnRate: opts.turnRate ?? 4.0,
+        animPhase: 0,
+        kind: opts.kind || 'animal'
+      };
+      agents.push(a);
+      return a;
+    }
+
+    // Low-poly squirrel (body + head + tail)
+    function makeSquirrel(){
+      const body = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8).scale(1.3,0.8,0.7), new THREE.MeshStandardMaterial({ color: 0x8b5e3c, roughness: 0.7 }));
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 8), new THREE.MeshStandardMaterial({ color: 0x8b5e3c, roughness:0.7 }));
+      head.position.set(0.12, 0.06, 0);
+      const tail = new THREE.Mesh(new THREE.CapsuleGeometry(0.035, 0.25, 3, 6), new THREE.MeshStandardMaterial({ color: 0x915a36, roughness:0.7 }));
+      tail.rotation.z = Math.PI/2; tail.position.set(-0.14, 0.12, 0);
+      const g = new THREE.Group(); g.add(body, head, tail);
+      g.position.set(-0.8, 0.06, 0.9);
+      scene.add(g);
+      const agent = makeAgent(g, { kind:'squirrel', maxSpeed: 1.2, accel: 3.5, turnRate: 8.0 });
+      agent.tail = tail;
+      return agent;
+    }
+
+    // Boxy dog (torso + head + 4 legs + tail), simple trot
+    function makeDog(){
+      const torso = new THREE.Mesh(new THREE.BoxGeometry(0.42,0.18,0.22), new THREE.MeshStandardMaterial({ color: 0x7a6a56, roughness:0.8 }));
+      const head  = new THREE.Mesh(new THREE.BoxGeometry(0.16,0.14,0.18), new THREE.MeshStandardMaterial({ color: 0x7a6a56, roughness:0.8 }));
+      head.position.set(0.26, 0.06, 0);
+      const tail  = new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.18,6), new THREE.MeshStandardMaterial({ color: 0x6b5b47, roughness:0.8 }));
+      tail.position.set(-0.24, 0.08, 0); tail.rotation.z = Math.PI/6;
+
+      const legGeo = new THREE.BoxGeometry(0.06,0.16,0.06);
+      function leg(){ return new THREE.Mesh(legGeo, new THREE.MeshStandardMaterial({ color: 0x5f5141, roughness:0.8 })); }
+      const lf = leg(); lf.position.set( 0.14,-0.17, 0.08);
+      const rf = leg(); rf.position.set( 0.14,-0.17,-0.08);
+      const lb = leg(); lb.position.set(-0.14,-0.17, 0.08);
+      const rb = leg(); rb.position.set(-0.14,-0.17,-0.08);
+
+      const g = new THREE.Group(); g.add(torso, head, tail, lf, rf, lb, rb);
+      g.position.set(1.0, 0.12, -1.2);
+      scene.add(g);
+
+      const agent = makeAgent(g, { kind:'dog', maxSpeed: 0.9, accel: 2.2, turnRate: 5.0 });
+      agent.legs = { lf, rf, lb, rb };
+      agent.tail = tail;
+      return agent;
+    }
+
+    const aSquirrel = makeSquirrel();
+    const aDog = makeDog();
+
+    // Wander / steering update
+    function updateAgents(dt){
+      for(const a of agents){
+        // if near target, choose a new one
+        const toTarget = new THREE.Vector3().subVectors(a.target, a.pos);
+        const dist = toTarget.length();
+        if (dist < 0.2) {
+          a.target = randomGardenPoint();
+        }
+
+        // desired velocity toward target
+        const desired = toTarget.normalize().multiplyScalar(a.maxSpeed);
+        // simple steering (accelerate toward desired)
+        const steer = desired.sub(a.vel);
+        const maxAccel = a.accel * dt;
+        if (steer.length() > maxAccel) steer.setLength(maxAccel);
+        a.vel.add(steer);
+
+        // keep within garden & away from pond with soft push
+        const r = Math.hypot(a.pos.x, a.pos.z);
+        if (r > GARDEN_RADIUS-0.25) {
+          const push = new THREE.Vector3(-a.pos.x, 0, -a.pos.z).setLength(1).multiplyScalar(0.8*dt);
+          a.vel.add(push);
+        }
+        const rp = Math.hypot(a.pos.x, a.pos.z);
+        if (rp < POND_RADIUS+0.35) {
+          const push = new THREE.Vector3(a.pos.x, 0, a.pos.z).setLength(1).multiplyScalar(1.2*dt);
+          a.vel.add(push);
+        }
+
+        // integrate
+        a.pos.addScaledVector(a.vel, dt);
+
+        // orient toward velocity
+        if (a.vel.lengthSq() > 1e-4) {
+          const yaw = Math.atan2(a.vel.x, a.vel.z); // note x/z axes
+          a.obj.rotation.y = THREE.MathUtils.lerp(a.obj.rotation.y, yaw, Math.min(1, a.turnRate*dt));
+        }
+
+        // keep on ground
+        a.obj.position.set(a.pos.x, a.obj.position.y, a.pos.z);
+
+        // simple anim
+        a.animPhase += dt * (2.0 + a.vel.length());
+        if (a.kind === 'squirrel') {
+          // tail swish & bounce
+          if (a.tail) a.tail.rotation.y = Math.sin(a.animPhase*3.2)*0.3;
+          a.obj.position.y = 0.06 + Math.abs(Math.sin(a.animPhase*4.0))*0.01;
+          // quick scurry bursts
+          if (Math.random() < 0.005) a.target = randomGardenPoint();
+        } else if (a.kind === 'dog') {
+          // leg trot + wag
+          const L = a.legs;
+          if (L){
+            const amp = 0.35, spd = 6.0;
+            const s = Math.sin(a.animPhase*spd), c = Math.cos(a.animPhase*spd);
+            L.lf.rotation.x =  s*amp;  L.rb.rotation.x =  s*amp;
+            L.rf.rotation.x = -s*amp;  L.lb.rotation.x = -s*amp;
+          }
+          if (a.tail) a.tail.rotation.y = Math.sin(a.animPhase*5.0)*0.35;
+          a.obj.position.y = 0.12 + Math.abs(Math.sin(a.animPhase*3.0))*0.005;
+        }
+      }
+    }
 
     // ===== Locomotion (clamped to room) =====
     function applyThumbstickLocomotion(dt) {
       const session = renderer.xr.getSession();
       if (!session) return;
-      const speed = 1.6; // m/s, a gentle indoor pace
+      const speed = 1.6;
       for (const source of session.inputSources) {
         if (!source.gamepad || source.handedness !== 'left') continue;
         const [x0,y0,x1,y1] = source.gamepad.axes;
@@ -320,24 +346,37 @@
     }
 
     // ===== Animate =====
+    const rig = new THREE.Group(); rig.position.set(0,0,0); scene.add(rig); rig.add(camera);
     const clock = new THREE.Clock();
     renderer.setAnimationLoop(()=>{
-      const dt = clock.getDelta();
+      const dt = Math.min(0.05, clock.getDelta());
       if (grabbedBy) {
-        const p = new THREE.Vector3(), q = new THREE.Quaternion();
+        const p=new THREE.Vector3(), q=new THREE.Quaternion();
         grabbedBy.getWorldPosition(p); grabbedBy.getWorldQuaternion(q);
         cube.position.copy(p); cube.quaternion.copy(q);
       }
       if (renderer.xr.isPresenting) applyThumbstickLocomotion(dt);
       tickWater(dt);
+      updateAgents(dt);
       renderer.render(scene, camera);
     });
 
-    addEventListener('resize', ()=>{
-      camera.aspect = innerWidth/innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(innerWidth, innerHeight);
-    });
+    // resize
+    addEventListener('resize', ()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
+
+    // controllers & grab (after rig for simplicity)
+    const controllerModelFactory = new XRControllerModelFactory();
+    const controller1 = renderer.xr.getController(0), controller2 = renderer.xr.getController(1);
+    rig.add(controller1, controller2);
+    const grip1 = renderer.xr.getControllerGrip(0), grip2 = renderer.xr.getControllerGrip(1);
+    grip1.add(controllerModelFactory.createControllerModel(grip1)); grip2.add(controllerModelFactory.createControllerModel(grip2)); rig.add(grip1,grip2);
+
+    const cube = new THREE.Mesh(new THREE.BoxGeometry(0.3,0.3,0.3), new THREE.MeshStandardMaterial({ color: 0x86e1ff, roughness: 0.3 }));
+    cube.position.set(0.6,1.0,-0.8); scene.add(cube);
+    let grabbedBy = null;
+    function tryGrab(ctrl){ if(grabbedBy) return; const p=new THREE.Vector3(); ctrl.getWorldPosition(p); if(p.distanceTo(cube.position)<0.25) grabbedBy=ctrl; }
+    function tryRelease(ctrl){ if(grabbedBy===ctrl) grabbedBy=null; }
+    ;[controller1,controller2].forEach(c=>{ c.addEventListener('squeezestart',()=>tryGrab(c)); c.addEventListener('squeezeend',()=>tryRelease(c)); });
   </script>
 </body>
 </html>
