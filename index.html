@@ -3,27 +3,26 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>WebXR Baseworld (Three.js)</title>
+    <title>Tributaries – WebXR Scenery</title>
     <style>
-      html, body { margin:0; height:100%; background:#0b0b0b; color:#ddd; }
+      html, body { margin:0; height:100%; background:#0a0c10; color:#e6eefc; }
       #overlay {
         position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
         font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
         pointer-events: none; user-select: none; text-align: center; line-height: 1.4;
       }
-      #overlay .panel {
-        background: rgba(0,0,0,.5); padding: 16px 20px; border-radius: 12px; backdrop-filter: blur(6px);
-        box-shadow: 0 8px 32px rgba(0,0,0,.4);
-      }
-      a { color: #8ec5ff; text-decoration: none; }
-      .small { opacity:.8; font-size: .9rem; }
+      #overlay .panel { background: rgba(0,0,0,.45); padding: 14px 18px; border-radius: 12px; }
+      .small { opacity:.85; font-size:.9rem; }
+      a { color:#9fd4ff; text-decoration:none; }
     </style>
   </head>
   <body>
     <div id="overlay">
       <div class="panel">
-        <div><strong>WebXR Baseworld</strong> — thumbstick to move, grip to pick up cube</div>
-        <div class="small">Open this page on your Quest Browser (HTTPS), then click “Enter VR”.</div>
+        <div><strong>Tributaries – WebXR</strong> · Left stick: move · Grip: grab cube</div>
+        <div class="small">
+          (Optional) Add audio files at <code>/audio/calm.mp3</code> and <code>/audio/rushing.mp3</code> for crossfades.
+        </div>
       </div>
     </div>
     <script type="module" src="./main.js"></script>
