@@ -23,11 +23,21 @@
       </div>
     </div>
 
-    <script type="module">
-      import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-      import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
-      import { XRButton } from 'https://unpkg.com/three@0.160.0/examples/jsm/webxr/XRButton.js';
-      import { XRControllerModelFactory } from 'https://unpkg.com/three@0.160.0/examples/jsm/webxr/XRControllerModelFactory.js';
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+
+<script type="module">
+  import * as THREE from 'three';
+  import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+  import { XRButton } from 'https://unpkg.com/three@0.160.0/examples/jsm/webxr/XRButton.js';
+  import { XRControllerModelFactory } from 'https://unpkg.com/three@0.160.0/examples/jsm/webxr/XRControllerModelFactory.js';
+  // ...rest of your code unchanged...
+</script>
 
       // ===== Renderer & scene =====
       const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
