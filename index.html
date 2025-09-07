@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>VR Garden Room – with Animals</title>
+  <title>VR Garden Room – Animals (Fixed Rig)</title>
   <style>
     html, body { margin:0; height:100%; background:#0a0c10; color:#e6eefc; }
     #overlay {
@@ -88,6 +88,17 @@
     const soilAlbedo = texLoader.load('textures/ground_albedo.jpg', t=>{ t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(3,3); }, undefined, ()=>{});
     const soilNormal = texLoader.load('textures/ground_normal.jpg', t=>{ t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(3,3); }, undefined, ()=>{});
     const soilRough  = texLoader.load('textures/ground_rough.jpg',  t=>{ t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(3,3); }, undefined, ()=>{});
+    const waterNormal = texLoader.load('textures/water_normal.jpg', t=>{ t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(3,3); }, undefined, ()=>{});
+    const barkTex   = texLoader.load('textures/bark.jpg',   t=>{ t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; }, undefined, ()=>{});
+    const leavesTex = texLoader.load('textures/leaves.jpg', t=>{ t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; }, undefined, ()=>{});
+
+    // Optional sky env (if textures/sky.jpg exists)
+    texLoader.load('textures/sky.jpg', (t)=>{
+      t.mapping = THREE.EquirectangularReflectionMapping;
+      t.colorSpace = THREE.SRGBColorSpace;
+      scene.background = t;
+      scene.environment = t;
+    }, undefined, ()=>{});
 
     // ===== Room: floor/walls/ceiling with skylight hole =====
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_SIZE, ROOM_SIZE), new THREE.MeshStandardMaterial({ color: 0x2d3138, roughness: 0.95 }));
@@ -102,7 +113,6 @@
       makeWall(ROOM_SIZE, ROOM_HEIGHT, 0, -HALF,  0)
     );
 
-    // Ceiling with rectangular skylight
     (function makeCeilingWithSkylight(){
       const outer = new THREE.Shape();
       outer.moveTo(-HALF, -HALF); outer.lineTo( HALF, -HALF); outer.lineTo( HALF,  HALF); outer.lineTo(-HALF,  HALF); outer.closePath();
@@ -125,16 +135,16 @@
     garden.rotation.x = -Math.PI/2; garden.position.y = 0.01; scene.add(garden);
 
     // ===== Pond =====
-    const waterNormal = texLoader.load('textures/water_normal.jpg', t=>{ t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(3,3); }, undefined, ()=>{});
-    const pondMat = new THREE.MeshStandardMaterial({ color: 0x224463, roughness: 0.25, metalness: 0.05, normalMap: waterNormal || null, transparent:true, opacity:0.98, envMapIntensity:0.6 });
+    const pondMat = new THREE.MeshStandardMaterial({
+      color: 0x224463, roughness: 0.25, metalness: 0.05,
+      normalMap: waterNormal || null, transparent:true, opacity:0.98, envMapIntensity:0.6
+    });
     const pond = new THREE.Mesh(new THREE.CircleGeometry(POND_RADIUS, 48), pondMat);
     pond.rotation.x = -Math.PI/2; pond.position.set(0,0.012,0); pond.receiveShadow = true; scene.add(pond);
     let waterTime = 0;
     function tickWater(dt){ if(!pondMat.normalMap) return; waterTime += dt*0.05; pondMat.normalMap.offset.set(waterTime, waterTime*0.7); }
 
     // ===== Trees =====
-    const barkTex   = texLoader.load('textures/bark.jpg',   t=>{ t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; }, undefined, ()=>{});
-    const leavesTex = texLoader.load('textures/leaves.jpg', t=>{ t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; }, undefined, ()=>{});
     function makeTree(scale=1){
       const trunk = new THREE.Mesh(
         new THREE.CylinderGeometry(0.06*scale, 0.09*scale, 0.9*scale, 6),
@@ -173,16 +183,24 @@
     const board = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 1.1), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 }));
     board.position.set(0, 1.5, -HALF + 0.01); scene.add(board);
 
-    // ===== Player rig & controllers =====
-    const rig = new THREE.Group(); rig.position.set(0,0,0); scene.add(rig); rig.add(camera);
-    const controllerModelFactory = new XRControllerModelFactory();
-    const controller1 = renderer.xr.getController(0), controller2 = renderer.xr.getController(1);
-    rig.add(controller1, controller2);
-    const grip1 = renderer.xr.getControllerGrip(0), grip2 = renderer.xr.getControllerGrip(1);
-    grip1.add(controllerModelFactory.createControllerModel(grip1)); grip2.add(controllerModelFactory.createControllerModel(grip2));
-    rig.add(grip1, grip2);
+    // ===== Player rig & controllers (DEFINED ONCE) =====
+    const rig = new THREE.Group();
+    rig.position.set(0,0,0);
+    scene.add(rig);
+    rig.add(camera);
 
-    // Debug cube
+    const controllerModelFactory = new XRControllerModelFactory();
+    const controller1 = renderer.xr.getController(0);
+    const controller2 = renderer.xr.getController(1);
+    rig.add(controller1, controller2);
+
+    const grip1 = renderer.xr.getControllerGrip(0);
+    const grip2 = renderer.xr.getControllerGrip(1);
+    grip1.add(controllerModelFactory.createControllerModel(grip1));
+    grip2.add(controllerModelFactory.createControllerModel(grip2));
+    rig.add(grip1,grip2);
+
+    // Grabbable cube (debug)
     const cube = new THREE.Mesh(new THREE.BoxGeometry(0.3,0.3,0.3), new THREE.MeshStandardMaterial({ color: 0x86e1ff, roughness: 0.3 }));
     cube.position.set(0.6,1.0,-0.8); scene.add(cube);
     let grabbedBy = null;
@@ -192,7 +210,6 @@
 
     // ===== Animals =====
     const agents = [];
-    // Utility: pick random point inside garden, avoiding pond
     function randomGardenPoint(){
       for(let i=0;i<50;i++){
         const r = Math.sqrt(Math.random())*(GARDEN_RADIUS-0.25);
@@ -217,106 +234,70 @@
       agents.push(a);
       return a;
     }
-
-    // Low-poly squirrel (body + head + tail)
     function makeSquirrel(){
       const body = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8).scale(1.3,0.8,0.7), new THREE.MeshStandardMaterial({ color: 0x8b5e3c, roughness: 0.7 }));
-      const head = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 8), new THREE.MeshStandardMaterial({ color: 0x8b5e3c, roughness:0.7 }));
-      head.position.set(0.12, 0.06, 0);
-      const tail = new THREE.Mesh(new THREE.CapsuleGeometry(0.035, 0.25, 3, 6), new THREE.MeshStandardMaterial({ color: 0x915a36, roughness:0.7 }));
-      tail.rotation.z = Math.PI/2; tail.position.set(-0.14, 0.12, 0);
-      const g = new THREE.Group(); g.add(body, head, tail);
-      g.position.set(-0.8, 0.06, 0.9);
-      scene.add(g);
-      const agent = makeAgent(g, { kind:'squirrel', maxSpeed: 1.2, accel: 3.5, turnRate: 8.0 });
-      agent.tail = tail;
-      return agent;
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 8), new THREE.MeshStandardMaterial({ color: 0x8b5e3c, roughness:0.7 })); head.position.set(0.12, 0.06, 0);
+      const tail = new THREE.Mesh(new THREE.CapsuleGeometry(0.035, 0.25, 3, 6), new THREE.MeshStandardMaterial({ color: 0x915a36, roughness:0.7 })); tail.rotation.z = Math.PI/2; tail.position.set(-0.14, 0.12, 0);
+      const g = new THREE.Group(); g.add(body, head, tail); g.position.set(-0.8, 0.06, 0.9); scene.add(g);
+      const agent = makeAgent(g, { kind:'squirrel', maxSpeed: 1.2, accel: 3.5, turnRate: 8.0 }); agent.tail = tail; return agent;
     }
-
-    // Boxy dog (torso + head + 4 legs + tail), simple trot
     function makeDog(){
       const torso = new THREE.Mesh(new THREE.BoxGeometry(0.42,0.18,0.22), new THREE.MeshStandardMaterial({ color: 0x7a6a56, roughness:0.8 }));
-      const head  = new THREE.Mesh(new THREE.BoxGeometry(0.16,0.14,0.18), new THREE.MeshStandardMaterial({ color: 0x7a6a56, roughness:0.8 }));
-      head.position.set(0.26, 0.06, 0);
-      const tail  = new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.18,6), new THREE.MeshStandardMaterial({ color: 0x6b5b47, roughness:0.8 }));
-      tail.position.set(-0.24, 0.08, 0); tail.rotation.z = Math.PI/6;
-
+      const head  = new THREE.Mesh(new THREE.BoxGeometry(0.16,0.14,0.18), new THREE.MeshStandardMaterial({ color: 0x7a6a56, roughness:0.8 })); head.position.set(0.26, 0.06, 0);
+      const tail  = new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.18,6), new THREE.MeshStandardMaterial({ color: 0x6b5b47, roughness:0.8 })); tail.position.set(-0.24, 0.08, 0); tail.rotation.z = Math.PI/6;
       const legGeo = new THREE.BoxGeometry(0.06,0.16,0.06);
       function leg(){ return new THREE.Mesh(legGeo, new THREE.MeshStandardMaterial({ color: 0x5f5141, roughness:0.8 })); }
       const lf = leg(); lf.position.set( 0.14,-0.17, 0.08);
       const rf = leg(); rf.position.set( 0.14,-0.17,-0.08);
       const lb = leg(); lb.position.set(-0.14,-0.17, 0.08);
       const rb = leg(); rb.position.set(-0.14,-0.17,-0.08);
-
-      const g = new THREE.Group(); g.add(torso, head, tail, lf, rf, lb, rb);
-      g.position.set(1.0, 0.12, -1.2);
-      scene.add(g);
-
-      const agent = makeAgent(g, { kind:'dog', maxSpeed: 0.9, accel: 2.2, turnRate: 5.0 });
-      agent.legs = { lf, rf, lb, rb };
-      agent.tail = tail;
-      return agent;
+      const g = new THREE.Group(); g.add(torso, head, tail, lf, rf, lb, rb); g.position.set(1.0, 0.12, -1.2); scene.add(g);
+      const agent = makeAgent(g, { kind:'dog', maxSpeed: 0.9, accel: 2.2, turnRate: 5.0 }); agent.legs = { lf, rf, lb, rb }; agent.tail = tail; return agent;
     }
-
     const aSquirrel = makeSquirrel();
     const aDog = makeDog();
 
-    // Wander / steering update
     function updateAgents(dt){
       for(const a of agents){
-        // if near target, choose a new one
         const toTarget = new THREE.Vector3().subVectors(a.target, a.pos);
         const dist = toTarget.length();
-        if (dist < 0.2) {
-          a.target = randomGardenPoint();
-        }
+        if (dist < 0.2) a.target = randomGardenPoint();
 
-        // desired velocity toward target
         const desired = toTarget.normalize().multiplyScalar(a.maxSpeed);
-        // simple steering (accelerate toward desired)
         const steer = desired.sub(a.vel);
         const maxAccel = a.accel * dt;
         if (steer.length() > maxAccel) steer.setLength(maxAccel);
         a.vel.add(steer);
 
-        // keep within garden & away from pond with soft push
-        const r = Math.hypot(a.pos.x, a.pos.z);
-        if (r > GARDEN_RADIUS-0.25) {
+        // garden/pond keep-in/out
+        if (Math.hypot(a.pos.x, a.pos.z) > GARDEN_RADIUS-0.25) {
           const push = new THREE.Vector3(-a.pos.x, 0, -a.pos.z).setLength(1).multiplyScalar(0.8*dt);
           a.vel.add(push);
         }
-        const rp = Math.hypot(a.pos.x, a.pos.z);
-        if (rp < POND_RADIUS+0.35) {
+        if (Math.hypot(a.pos.x, a.pos.z) < POND_RADIUS+0.35) {
           const push = new THREE.Vector3(a.pos.x, 0, a.pos.z).setLength(1).multiplyScalar(1.2*dt);
           a.vel.add(push);
         }
 
-        // integrate
         a.pos.addScaledVector(a.vel, dt);
 
-        // orient toward velocity
         if (a.vel.lengthSq() > 1e-4) {
-          const yaw = Math.atan2(a.vel.x, a.vel.z); // note x/z axes
+          const yaw = Math.atan2(a.vel.x, a.vel.z);
           a.obj.rotation.y = THREE.MathUtils.lerp(a.obj.rotation.y, yaw, Math.min(1, a.turnRate*dt));
         }
-
-        // keep on ground
         a.obj.position.set(a.pos.x, a.obj.position.y, a.pos.z);
 
-        // simple anim
+        // simple anims
         a.animPhase += dt * (2.0 + a.vel.length());
         if (a.kind === 'squirrel') {
-          // tail swish & bounce
           if (a.tail) a.tail.rotation.y = Math.sin(a.animPhase*3.2)*0.3;
           a.obj.position.y = 0.06 + Math.abs(Math.sin(a.animPhase*4.0))*0.01;
-          // quick scurry bursts
           if (Math.random() < 0.005) a.target = randomGardenPoint();
         } else if (a.kind === 'dog') {
-          // leg trot + wag
           const L = a.legs;
           if (L){
             const amp = 0.35, spd = 6.0;
-            const s = Math.sin(a.animPhase*spd), c = Math.cos(a.animPhase*spd);
+            const s = Math.sin(a.animPhase*spd);
             L.lf.rotation.x =  s*amp;  L.rb.rotation.x =  s*amp;
             L.rf.rotation.x = -s*amp;  L.lb.rotation.x = -s*amp;
           }
@@ -345,38 +326,31 @@
       }
     }
 
-    // ===== Animate =====
-    const rig = new THREE.Group(); rig.position.set(0,0,0); scene.add(rig); rig.add(camera);
+    // ===== Animation loop =====
     const clock = new THREE.Clock();
     renderer.setAnimationLoop(()=>{
       const dt = Math.min(0.05, clock.getDelta());
+
       if (grabbedBy) {
         const p=new THREE.Vector3(), q=new THREE.Quaternion();
         grabbedBy.getWorldPosition(p); grabbedBy.getWorldQuaternion(q);
         cube.position.copy(p); cube.quaternion.copy(q);
       }
+
       if (renderer.xr.isPresenting) applyThumbstickLocomotion(dt);
+
       tickWater(dt);
       updateAgents(dt);
       renderer.render(scene, camera);
     });
 
     // resize
-    addEventListener('resize', ()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
+    addEventListener('resize', ()=>{
+      camera.aspect = innerWidth/innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth,innerHeight);
+    });
 
-    // controllers & grab (after rig for simplicity)
-    const controllerModelFactory = new XRControllerModelFactory();
-    const controller1 = renderer.xr.getController(0), controller2 = renderer.xr.getController(1);
-    rig.add(controller1, controller2);
-    const grip1 = renderer.xr.getControllerGrip(0), grip2 = renderer.xr.getControllerGrip(1);
-    grip1.add(controllerModelFactory.createControllerModel(grip1)); grip2.add(controllerModelFactory.createControllerModel(grip2)); rig.add(grip1,grip2);
-
-    const cube = new THREE.Mesh(new THREE.BoxGeometry(0.3,0.3,0.3), new THREE.MeshStandardMaterial({ color: 0x86e1ff, roughness: 0.3 }));
-    cube.position.set(0.6,1.0,-0.8); scene.add(cube);
-    let grabbedBy = null;
-    function tryGrab(ctrl){ if(grabbedBy) return; const p=new THREE.Vector3(); ctrl.getWorldPosition(p); if(p.distanceTo(cube.position)<0.25) grabbedBy=ctrl; }
-    function tryRelease(ctrl){ if(grabbedBy===ctrl) grabbedBy=null; }
-    ;[controller1,controller2].forEach(c=>{ c.addEventListener('squeezestart',()=>tryGrab(c)); c.addEventListener('squeezeend',()=>tryRelease(c)); });
   </script>
 </body>
 </html>
