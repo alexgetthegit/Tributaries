@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WebXR Baseworld (Three.js)</title>
+    <style>
+      html, body { margin:0; height:100%; background:#0b0b0b; color:#ddd; }
+      #overlay {
+        position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+        pointer-events: none; user-select: none; text-align: center; line-height: 1.4;
+      }
+      #overlay .panel {
+        background: rgba(0,0,0,.5); padding: 16px 20px; border-radius: 12px; backdrop-filter: blur(6px);
+        box-shadow: 0 8px 32px rgba(0,0,0,.4);
+      }
+      a { color: #8ec5ff; text-decoration: none; }
+      .small { opacity:.8; font-size: .9rem; }
+    </style>
+  </head>
+  <body>
+    <div id="overlay">
+      <div class="panel">
+        <div><strong>WebXR Baseworld</strong> — thumbstick to move, grip to pick up cube</div>
+        <div class="small">Open this page on your Quest Browser (HTTPS), then click “Enter VR”.</div>
+      </div>
+    </div>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
