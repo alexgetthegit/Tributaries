@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Tributaries – Textured WebXR</title>
+    <title>Tributaries – WebXR with Textured Sky</title>
     <style>
       html, body { margin:0; height:100%; background:#0a0c10; color:#e6eefc; }
       #overlay {
@@ -19,11 +19,11 @@
     <div id="overlay">
       <div class="panel">
         <div><strong>Tributaries – WebXR</strong> · Left stick: move · Grip: grab cube</div>
-        <div class="small">Textures: drop files into <code>/textures/</code> with the names used below.</div>
+        <div class="small">Sky, ground, water, and trees are now textured 🎨</div>
       </div>
     </div>
 
-    <!-- Import map so example modules can resolve "three" -->
+    <!-- Import map -->
     <script type="importmap">
     {
       "imports": {
@@ -52,7 +52,6 @@
       );
 
       const scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x0a0c10);
       scene.fog = new THREE.FogExp2(0x0a0c10, 0.03);
 
       // ===== Camera & orbit =====
@@ -70,22 +69,25 @@
       sun.shadow.mapSize.set(1024,1024);
       scene.add(sun);
 
-      // ===== Texture loader helpers =====
+      // ===== Texture loader =====
       const texLoader = new THREE.TextureLoader();
-      function loadTex(path, onOk){
-        return texLoader.load(
-          path,
-          t => { t.colorSpace = (path.includes('albedo')||path.includes('leaves')||path.includes('bark')) ? THREE.SRGBColorSpace : THREE.NoColorSpace; onOk && onOk(t); },
-          undefined,
-          () => { /* missing texture: ignore, we’ll fallback in materials */ }
-        );
-      }
+
+      // ===== Sky setup with PMREM =====
+      const pmrem = new THREE.PMREMGenerator(renderer);
+      pmrem.compileEquirectangularShader();
+
+      texLoader.load('textures/sky.jpg', (t) => {
+        t.mapping = THREE.EquirectangularReflectionMapping;
+        t.colorSpace = THREE.SRGBColorSpace;
+        const env = pmrem.fromEquirectangular(t).texture;
+        scene.background = t;   // visible sky
+        scene.environment = env; // filtered env for lighting
+      });
 
       // ===== Ground (textured) =====
       const GROUND_SIZE = 200;
       const groundGeo = new THREE.PlaneGeometry(GROUND_SIZE, GROUND_SIZE, 200, 200);
       groundGeo.rotateX(-Math.PI / 2);
-      // gentle undulation
       {
         const pos = groundGeo.attributes.position;
         for (let i = 0; i < pos.count; i++) {
@@ -97,91 +99,67 @@
         groundGeo.computeVertexNormals();
       }
 
-      const tAlbedo = loadTex('textures/ground_albedo.jpg', t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(12,12); });
-      const tNormal = loadTex('textures/ground_normal.jpg', t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(12,12); });
-      const tRough  = loadTex('textures/ground_rough.jpg',  t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(12,12); });
+      const tAlbedo = texLoader.load('textures/ground_albedo.jpg');
+      const tNormal = texLoader.load('textures/ground_normal.jpg');
+      const tRough  = texLoader.load('textures/ground_rough.jpg');
+
+      [tAlbedo, tNormal, tRough].forEach(t => {
+        if (!t) return;
+        t.wrapS = t.wrapT = THREE.RepeatWrapping;
+        t.repeat.set(12, 12);
+      });
+      tAlbedo.colorSpace = THREE.SRGBColorSpace;
 
       const groundMat = new THREE.MeshStandardMaterial({
-        map: tAlbedo || null,
-        normalMap: tNormal || null,
-        roughnessMap: tRough || null,
+        map: tAlbedo,
+        normalMap: tNormal,
+        roughnessMap: tRough,
         metalness: 0.0,
-        roughness: 1.0,
-        color: (!tAlbedo ? new THREE.Color(0x1e232b) : new THREE.Color(0xffffff))
+        roughness: 1.0
       });
 
       const ground = new THREE.Mesh(groundGeo, groundMat);
       ground.receiveShadow = true;
       scene.add(ground);
 
-      // ===== Rivers & Lake =====
-      function makeCurve(points) {
-        return new THREE.CatmullRomCurve3(points.map(p => new THREE.Vector3(...p)), false, 'catmullrom', 0.1);
-      }
-      function makeRibbonFromCurve(curve, halfWidth, color) {
-        const segments = 200;
-        const positions = new Float32Array((segments + 1) * 2 * 3);
-        const normals = new Float32Array((segments + 1) * 2 * 3);
-        const indices = [];
-        const up = new THREE.Vector3(0,1,0), bin = new THREE.Vector3(), tan = new THREE.Vector3(), left = new THREE.Vector3();
-        for (let i = 0; i <= segments; i++) {
-          const t = i/segments, p = curve.getPoint(t), pn = curve.getPoint(Math.min(1, t + 1/segments));
-          tan.copy(pn).sub(p).normalize(); bin.crossVectors(up, tan).normalize(); left.copy(bin).multiplyScalar(halfWidth);
-          const r = p.clone().add(left), l = p.clone().addScaledVector(left, -1), ii = i*2*3;
-          positions[ii] = l.x; positions[ii+1] = l.y + 0.02; positions[ii+2] = l.z;
-          positions[ii+3] = r.x; positions[ii+4] = r.y + 0.02; positions[ii+5] = r.z;
-          normals[ii] = 0; normals[ii+1] = 1; normals[ii+2] = 0; normals[ii+3] = 0; normals[ii+4] = 1; normals[ii+5] = 0;
-          if (i < segments) { const a=i*2,b=i*2+1,c=i*2+2,d=i*2+3; indices.push(a,b,c, b,d,c); }
-        }
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        geo.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
-        geo.setIndex(indices);
-        return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, roughness: 0.35, metalness: 0.05, transparent: true, opacity: 0.95 }));
-      }
-
-      const calmCurve = makeCurve([[-40,0,-40],[-25,0,-25],[-12,0,-14],[-4,0,-8],[-1,0,-3],[0,0,0]]);
-      const rushCurve = makeCurve([[ 40,0,-42],[ 24,0,-26],[ 10,0,-16],[ 4,0,-9],[ 1,0,-4],[0,0,0]]);
-      const calmRiver = makeRibbonFromCurve(calmCurve, 2.6, 0x2b6c99);
-      const rushRiver = makeRibbonFromCurve(rushCurve, 3.2, 0x2a4c7a);
-      scene.add(calmRiver, rushRiver);
-
-      // Lake with animated normal map
-      const waterNormal = loadTex('textures/water_normal.jpg', t => {
-        t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(4,4);
+      // ===== Lake with animated water normals =====
+      const waterNormal = texLoader.load('textures/water_normal.jpg', t => {
+        t.wrapS = t.wrapT = THREE.RepeatWrapping;
+        t.repeat.set(4, 4);
       });
       const lakeMat = new THREE.MeshStandardMaterial({
         color: 0x224463,
         metalness: 0.05,
         roughness: 0.25,
-        normalMap: waterNormal || null,
+        normalMap: waterNormal,
         envMapIntensity: 0.6
       });
       const lake = new THREE.Mesh(new THREE.CircleGeometry(10, 64), lakeMat);
-      lake.rotation.x = -Math.PI / 2; lake.position.set(0, 0.015, 2); lake.receiveShadow = true; scene.add(lake);
+      lake.rotation.x = -Math.PI/2; lake.position.set(0,0.015,2);
+      lake.receiveShadow = true; scene.add(lake);
 
       let waterTime = 0;
       function tickWater(dt) {
         if (!lakeMat.normalMap) return;
         waterTime += dt * 0.05;
-        lakeMat.normalMap.offset.set(waterTime, waterTime * 0.7);
+        lakeMat.normalMap.offset.set(waterTime, waterTime*0.7);
       }
 
-      // ===== Trees (instanced) with optional bark/leaves textures =====
-      const barkTex   = loadTex('textures/bark.jpg',   t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(1,2); });
-      const leavesTex = loadTex('textures/leaves.jpg', t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(2,2); });
+      // ===== Trees (bark + leaves textures) =====
+      const barkTex   = texLoader.load('textures/bark.jpg');   barkTex.colorSpace   = THREE.SRGBColorSpace;
+      const leavesTex = texLoader.load('textures/leaves.jpg'); leavesTex.colorSpace = THREE.SRGBColorSpace;
 
-      const trunkGeo  = new THREE.CylinderGeometry(0.08, 0.12, 0.9, 6);
-      const crownGeo  = new THREE.ConeGeometry(0.6, 1.2, 8);
+      const trunkGeo = new THREE.CylinderGeometry(0.08,0.12,0.9,6);
+      const crownGeo = new THREE.ConeGeometry(0.6,1.2,8);
 
-      const trunkMat  = new THREE.MeshStandardMaterial({
+      const trunkMat = new THREE.MeshStandardMaterial({
         map: barkTex || null,
-        color: barkTex ? new THREE.Color(0xffffff) : new THREE.Color(0x6d4b3b),
+        color: barkTex ? 0xffffff : 0x6d4b3b,
         roughness: 0.9
       });
-      const crownMat  = new THREE.MeshStandardMaterial({
+      const crownMat = new THREE.MeshStandardMaterial({
         map: leavesTex || null,
-        color: leavesTex ? new THREE.Color(0xffffff) : new THREE.Color(0x2d6b4e),
+        color: leavesTex ? 0xffffff : 0x2d6b4e,
         roughness: 0.7
       });
 
@@ -189,78 +167,52 @@
         const crowns = new THREE.InstancedMesh(crownGeo, crownMat, count);
         const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, count);
         const dummy = new THREE.Object3D();
-
-        function nearestDistanceToCurve(curve, x, z) {
-          let best = 1e9;
-          for (let i=0;i<=100;i++){ const p=curve.getPoint(i/100); const d=Math.hypot(p.x-x,p.z-z); if(d<best) best=d; }
-          return best;
-        }
-        function notInWaterOrBank(x,z){
-          const distLake=Math.hypot(x-0,z-2); if(distLake<12) return false;
-          const nearCalm=nearestDistanceToCurve(calmCurve,x,z);
-          const nearRush=nearestDistanceToCurve(rushCurve,x,z);
-          return (nearCalm>4 && nearRush>5);
-        }
-
-        let placed=0;
-        while(placed<count){
-          const x=(Math.random()-0.5)*160, z=(Math.random()-0.5)*160;
-          if(!notInWaterOrBank(x,z)) continue;
-          const s=0.8+Math.random()*0.6;
-          dummy.position.set(x,0,z); dummy.scale.setScalar(s); dummy.rotation.y=Math.random()*Math.PI*2; dummy.updateMatrix();
+        let placed = 0;
+        while (placed < count) {
+          const x = (Math.random()-0.5)*160, z = (Math.random()-0.5)*160;
+          const distLake = Math.hypot(x, z-2);
+          if (distLake < 12) continue;
+          const s = 0.8 + Math.random()*0.6;
+          dummy.position.set(x,0,z);
+          dummy.scale.setScalar(s);
+          dummy.rotation.y = Math.random()*Math.PI*2;
+          dummy.updateMatrix();
           crowns.setMatrixAt(placed, dummy.matrix);
           trunks.setMatrixAt(placed, dummy.matrix);
           placed++;
         }
-        crowns.instanceMatrix.needsUpdate = true; trunks.instanceMatrix.needsUpdate = true;
+        crowns.instanceMatrix.needsUpdate = true;
+        trunks.instanceMatrix.needsUpdate = true;
         scene.add(crowns, trunks);
       })(400);
 
-      // ===== Player rig & controllers (as before) =====
-      const rig = new THREE.Group();
-      rig.position.set(0, 0, 8); scene.add(rig); rig.add(camera);
+      // ===== Player rig & controllers =====
+      const rig = new THREE.Group(); rig.position.set(0,0,8);
+      scene.add(rig); rig.add(camera);
+
       const controllerModelFactory = new XRControllerModelFactory();
       const controller1 = renderer.xr.getController(0), controller2 = renderer.xr.getController(1);
       rig.add(controller1, controller2);
       const grip1 = renderer.xr.getControllerGrip(0), grip2 = renderer.xr.getControllerGrip(1);
-      grip1.add(controllerModelFactory.createControllerModel(grip1)); grip2.add(controllerModelFactory.createControllerModel(grip2));
+      grip1.add(controllerModelFactory.createControllerModel(grip1));
+      grip2.add(controllerModelFactory.createControllerModel(grip2));
       rig.add(grip1, grip2);
 
-      // Grabbable cube (kept for debug)
+      // ===== Simple test cube =====
       const cube = new THREE.Mesh(new THREE.BoxGeometry(0.3,0.3,0.3), new THREE.MeshStandardMaterial({ color: 0x86e1ff }));
       cube.position.set(0.5,1.0,6.5); scene.add(cube);
-      let grabbedBy=null;
-      function tryGrab(ctrl){ if(grabbedBy) return; const p=new THREE.Vector3(); ctrl.getWorldPosition(p); if(p.distanceTo(cube.position)<0.25) grabbedBy=ctrl; }
-      function tryRelease(ctrl){ if(grabbedBy===ctrl) grabbedBy=null; }
-      [controller1,controller2].forEach(c=>{ c.addEventListener('squeezestart',()=>tryGrab(c)); c.addEventListener('squeezeend',()=>tryRelease(c)); });
-
-      function applyThumbstickLocomotion(dt){
-        const session=renderer.xr.getSession(); if(!session) return; const speed=2.0;
-        for(const source of session.inputSources){ if(!source.gamepad||source.handedness!=='left') continue;
-          const [x0,y0,x1,y1]=source.gamepad.axes; const sx=(Math.abs(x1)>Math.abs(x0)?x1:x0)||0; const sy=(Math.abs(y1)>Math.abs(y0)?y1:y0)||0;
-          const yaw=new THREE.Euler().setFromQuaternion(camera.quaternion,'YXZ').y;
-          const forward=new THREE.Vector3(Math.sin(yaw),0,Math.cos(yaw)).multiplyScalar(-sy*speed*dt);
-          const strafe =new THREE.Vector3(Math.cos(yaw),0,-Math.sin(yaw)).multiplyScalar(sx*speed*dt);
-          rig.position.add(forward).add(strafe);
-        }
-      }
 
       // ===== Animate =====
       const clock = new THREE.Clock();
       renderer.setAnimationLoop(()=>{
         const dt = clock.getDelta();
-        if (grabbedBy) {
-          const p = new THREE.Vector3(), q = new THREE.Quaternion();
-          grabbedBy.getWorldPosition(p); grabbedBy.getWorldQuaternion(q);
-          cube.position.copy(p); cube.quaternion.copy(q);
-        }
-        if (renderer.xr.isPresenting) applyThumbstickLocomotion(dt);
         tickWater(dt);
         renderer.render(scene, camera);
       });
 
       addEventListener('resize', ()=>{
-        camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+        camera.aspect = innerWidth/innerHeight;
+        camera.updateProjectionMatrix();
         renderer.setSize(innerWidth, innerHeight);
       });
     </script>
