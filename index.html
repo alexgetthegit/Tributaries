@@ -1,229 +1,343 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>VR Room – 10m x 10m</title>
-    <style>
-      html, body { margin:0; height:100%; background:#0a0c10; color:#e6eefc; }
-      #overlay {
-        position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
-        font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-        pointer-events: none; user-select: none; text-align: center; line-height: 1.4;
-      }
-      #overlay .panel { background: rgba(0,0,0,.45); padding: 14px 18px; border-radius: 12px; }
-      .small { opacity:.85; font-size:.9rem; }
-    </style>
-  </head>
-  <body>
-    <div id="overlay">
-      <div class="panel">
-        <div><strong>VR Room</strong> · Left stick: move · Grip: grab cube</div>
-        <div class="small">Room is 10m × 10m × 3m. Movement is clamped inside the walls.</div>
-      </div>
-    </div>
-
-    <!-- Import map so example modules can resolve "three" -->
-    <script type="importmap">
-    {
-      "imports": {
-        "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
-      }
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VR Garden Room – 10m x 10m</title>
+  <style>
+    html, body { margin:0; height:100%; background:#0a0c10; color:#e6eefc; }
+    #overlay {
+      position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      pointer-events: none; user-select: none; text-align: center; line-height: 1.4;
     }
-    </script>
+    #overlay .panel { background: rgba(0,0,0,.45); padding: 14px 18px; border-radius: 12px; }
+    .small { opacity:.85; font-size:.9rem; }
+  </style>
+</head>
+<body>
+  <div id="overlay">
+    <div class="panel">
+      <div><strong>VR Garden Room</strong> · Left stick: move · Grip: grab cube</div>
+      <div class="small">10×10×3 m room, indoor meadow + pond + skylight 🌿</div>
+    </div>
+  </div>
 
-    <script type="module">
-      import * as THREE from 'three';
-      import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
-      import { XRButton } from 'https://unpkg.com/three@0.160.0/examples/jsm/webxr/XRButton.js';
-      import { XRControllerModelFactory } from 'https://unpkg.com/three@0.160.0/examples/jsm/webxr/XRControllerModelFactory.js';
+  <!-- Import map so example modules can resolve "three" -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
 
-      // ===== Config =====
-      const ROOM_SIZE = 10;     // meters (X and Z)
-      const ROOM_HEIGHT = 3;    // meters (Y)
-      const HALF = ROOM_SIZE / 2;
-      const CLAMP_MARGIN = 0.35; // keep player a bit away from walls
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+    import { XRButton } from 'https://unpkg.com/three@0.160.0/examples/jsm/webxr/XRButton.js';
+    import { XRControllerModelFactory } from 'https://unpkg.com/three@0.160.0/examples/jsm/webxr/XRControllerModelFactory.js';
 
-      // ===== Renderer & scene =====
-      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-      renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.xr.enabled = true;
-      renderer.outputColorSpace = THREE.SRGBColorSpace;
-      document.body.appendChild(renderer.domElement);
+    // ===== Config =====
+    const ROOM_SIZE = 10;      // meters (X & Z)
+    const ROOM_HEIGHT = 3;     // meters (Y)
+    const HALF = ROOM_SIZE / 2;
+    const CLAMP_MARGIN = 0.35; // keep player away from walls
+    const GARDEN_RADIUS = 4.0; // meters
+    const POND_RADIUS = 1.2;   // meters
 
-      // WebXR button (will be disabled on desktop without a runtime — normal)
-      document.body.appendChild(
-        XRButton.createButton(renderer, {
-          optionalFeatures: ['local-floor','bounded-floor','hand-tracking','local']
-        })
-      );
+    // ===== Renderer & scene =====
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.xr.enabled = true;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    document.body.appendChild(renderer.domElement);
 
-      const scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x0a0c10);
+    document.body.appendChild(
+      XRButton.createButton(renderer, {
+        optionalFeatures: ['local-floor','bounded-floor','hand-tracking','local']
+      })
+    );
 
-      // ===== Camera & orbit (desktop view) =====
-      const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
-      const orbit = new OrbitControls(camera, renderer.domElement);
-      camera.position.set(0, 1.6, HALF + 2); // stand near one wall looking inward
-      orbit.target.set(0, 1.4, 0);
-      orbit.update();
+    const scene = new THREE.Scene();
 
-      // ===== Lights =====
-      scene.add(new THREE.HemisphereLight(0xbfd8ff, 0x0a0c10, 0.5));
-      const sun = new THREE.DirectionalLight(0xffffff, 1.2);
-      sun.position.set(3, 6, 2);
-      sun.castShadow = true;
-      scene.add(sun);
+    // ===== Camera & orbit (desktop view) =====
+    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
+    const orbit = new OrbitControls(camera, renderer.domElement);
+    camera.position.set(0, 1.7, HALF - 1.0);
+    orbit.target.set(0, 1.4, 0);
+    orbit.update();
 
-      // Ceiling light panel for soft fill
-      const ceilingLight = new THREE.Mesh(
-        new THREE.PlaneGeometry(2.2, 1.2),
-        new THREE.MeshBasicMaterial({ color: 0xffffff })
-      );
-      ceilingLight.position.set(0, ROOM_HEIGHT - 0.05, 0);
-      ceilingLight.rotation.x = Math.PI / 2;
-      scene.add(ceilingLight);
+    // ===== Lights =====
+    scene.add(new THREE.HemisphereLight(0xbfd8ff, 0x1a2028, 0.55));
+    const sun = new THREE.DirectionalLight(0xffffff, 1.0);
+    sun.position.set(-2, 5, 2);
+    sun.castShadow = true;
+    scene.add(sun);
 
-      // ===== Materials =====
-      const texLoader = new THREE.TextureLoader();
+    // Soft “skylight panel” to brighten the garden
+    const skylightPanel = new THREE.Mesh(
+      new THREE.PlaneGeometry(2.6, 1.6),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped:false })
+    );
+    skylightPanel.rotation.x = Math.PI/2;
+    skylightPanel.position.set(0, ROOM_HEIGHT - 0.05, 0);
+    scene.add(skylightPanel);
 
-      // Floor textures (optional; falls back if missing)
-      const tAlbedo = texLoader.load('textures/ground_albedo.jpg', t => { t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(4,4); }, undefined, ()=>{});
-      const tNormal = texLoader.load('textures/ground_normal.jpg', t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(4,4); }, undefined, ()=>{});
-      const tRough  = texLoader.load('textures/ground_rough.jpg',  t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(4,4); }, undefined, ()=>{});
+    // ===== Textures =====
+    const texLoader = new THREE.TextureLoader();
 
-      const floorMat = new THREE.MeshStandardMaterial({
-        map: tAlbedo || null,
-        normalMap: tNormal || null,
-        roughnessMap: tRough || null,
-        metalness: 0.0,
-        roughness: 1.0,
-        color: (!tAlbedo ? new THREE.Color(0x30343a) : new THREE.Color(0xffffff))
-      });
+    // Optional sky: visible through the skylight + used for PBR environment
+    (function setupSky(){
+      texLoader.load('textures/sky.jpg', (t)=>{
+        t.mapping = THREE.EquirectangularReflectionMapping;
+        t.colorSpace = THREE.SRGBColorSpace;
+        // Use as environment; keep walls to hide horizon band
+        scene.background = t;
+        scene.environment = t;
+      }, undefined, ()=>{/* no sky.jpg? no problem */});
+    })();
 
-      const wallMat = new THREE.MeshStandardMaterial({ color: 0xe6e6ea, roughness: 0.9, metalness: 0.0 });
-      const ceilingMat = new THREE.MeshStandardMaterial({ color: 0xdcdfe6, roughness: 0.95, metalness: 0.0 });
+    // ===== Room: floor, ceiling with skylight hole, walls =====
+    // Floor is flat, the “garden disk” sits on top for a raised meadow look.
+    const floorMat = new THREE.MeshStandardMaterial({ color: 0x2d3138, roughness: 0.95, metalness: 0 });
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_SIZE, ROOM_SIZE), floorMat);
+    floor.rotation.x = -Math.PI/2;
+    scene.add(floor);
 
-      // ===== Geometry: Floor, Ceiling, Walls =====
-      // Floor centered at (0,0,0)
-      const floor = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_SIZE, ROOM_SIZE), floorMat);
-      floor.rotation.x = -Math.PI / 2;
-      scene.add(floor);
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0xe8eaee, roughness: 0.92, metalness: 0.0 });
+    function makeWall(width, height, x, z, rotY) {
+      const wall = new THREE.Mesh(new THREE.PlaneGeometry(width, height), wallMat);
+      wall.position.set(x, height/2, z);
+      wall.rotation.y = rotY;
+      return wall;
+    }
+    scene.add(
+      makeWall(ROOM_SIZE, ROOM_HEIGHT,  HALF, 0, -Math.PI/2),
+      makeWall(ROOM_SIZE, ROOM_HEIGHT, -HALF, 0,  Math.PI/2),
+      makeWall(ROOM_SIZE, ROOM_HEIGHT, 0,  HALF,  Math.PI),
+      makeWall(ROOM_SIZE, ROOM_HEIGHT, 0, -HALF,  0)
+    );
 
-      // Ceiling
-      const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_SIZE, ROOM_SIZE), ceilingMat);
-      ceiling.rotation.x = Math.PI / 2;
+    // Ceiling with a rectangular skylight hole (4m x 2.5m)
+    (function makeCeilingWithSkylight(){
+      const outer = new THREE.Shape();
+      outer.moveTo(-HALF, -HALF);
+      outer.lineTo( HALF, -HALF);
+      outer.lineTo( HALF,  HALF);
+      outer.lineTo(-HALF,  HALF);
+      outer.lineTo(-HALF, -HALF);
+
+      const hole = new THREE.Path();
+      const sx=2.0, sz=1.25;
+      hole.moveTo(-sx, -sz);
+      hole.lineTo( sx, -sz);
+      hole.lineTo( sx,  sz);
+      hole.lineTo(-sx,  sz);
+      hole.lineTo(-sx, -sz);
+      outer.holes.push(hole);
+
+      const shapeGeo = new THREE.ShapeGeometry(outer, 1);
+      const ceiling = new THREE.Mesh(shapeGeo, new THREE.MeshStandardMaterial({ color: 0xdfe3ea, roughness: 0.96 }));
+      ceiling.rotation.x = Math.PI/2; // XY -> horizontal
       ceiling.position.y = ROOM_HEIGHT;
       scene.add(ceiling);
+    })();
 
-      // Walls: +X, -X, +Z, -Z (inside-facing)
-      function makeWall(width, height, x, z, rotY) {
-        const wall = new THREE.Mesh(new THREE.PlaneGeometry(width, height), wallMat);
-        wall.position.set(x, height/2, z);
-        wall.rotation.y = rotY;
-        return wall;
-      }
-      scene.add(
-        makeWall(ROOM_SIZE, ROOM_HEIGHT,  HALF, 0, -Math.PI/2), // +X wall (faces -X)
-        makeWall(ROOM_SIZE, ROOM_HEIGHT, -HALF, 0,  Math.PI/2), // -X wall (faces +X)
-        makeWall(ROOM_SIZE, ROOM_HEIGHT, 0,  HALF,  Math.PI),   // +Z wall (faces -Z)
-        makeWall(ROOM_SIZE, ROOM_HEIGHT, 0, -HALF,  0)          // -Z wall (faces +Z)
+    // ===== Garden disk (textured ground) =====
+    const soilAlbedo = texLoader.load('textures/ground_albedo.jpg', t => { t.colorSpace = THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(3,3); }, undefined, ()=>{});
+    const soilNormal = texLoader.load('textures/ground_normal.jpg', t => { t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(3,3); }, undefined, ()=>{});
+    const soilRough  = texLoader.load('textures/ground_rough.jpg',  t => { t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(3,3); }, undefined, ()=>{});
+
+    const gardenMat = new THREE.MeshStandardMaterial({
+      map: soilAlbedo || null,
+      normalMap: soilNormal || null,
+      roughnessMap: soilRough || null,
+      color: soilAlbedo ? 0xffffff : 0x37403a,
+      metalness: 0.0,
+      roughness: 1.0
+    });
+    const garden = new THREE.Mesh(new THREE.CircleGeometry(GARDEN_RADIUS, 64), gardenMat);
+    garden.rotation.x = -Math.PI/2;
+    garden.position.y = 0.01; // sit above floor a hair
+    scene.add(garden);
+
+    // ===== Pond with animated normal =====
+    const waterNormal = texLoader.load('textures/water_normal.jpg', t=>{ t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(3,3); }, undefined, ()=>{});
+    const pondMat = new THREE.MeshStandardMaterial({
+      color: 0x224463,
+      roughness: 0.25,
+      metalness: 0.05,
+      normalMap: waterNormal || null,
+      envMapIntensity: 0.6,
+      transparent: true,
+      opacity: 0.98
+    });
+    const pond = new THREE.Mesh(new THREE.CircleGeometry(POND_RADIUS, 48), pondMat);
+    pond.rotation.x = -Math.PI/2;
+    pond.position.set(0, 0.012, 0);
+    pond.receiveShadow = true;
+    scene.add(pond);
+
+    let waterTime = 0;
+    function tickWater(dt){
+      if (!pondMat.normalMap) return;
+      waterTime += dt * 0.05;
+      pondMat.normalMap.offset.set(waterTime, waterTime*0.7);
+    }
+
+    // ===== Trees (low-poly, textured if bark/leaves exist) =====
+    const barkTex   = texLoader.load('textures/bark.jpg',   t=>{ t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; }, undefined, ()=>{});
+    const leavesTex = texLoader.load('textures/leaves.jpg', t=>{ t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; }, undefined, ()=>{});
+
+    function makeTree(scale=1){
+      const trunk = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.06*scale, 0.09*scale, 0.9*scale, 6),
+        new THREE.MeshStandardMaterial({ map: barkTex || null, color: barkTex?0xffffff:0x6d4b3b, roughness:0.9 })
       );
+      trunk.position.y = 0.45*scale;
 
-      // Simple whiteboard on one wall (visual anchor)
-      const board = new THREE.Mesh(
-        new THREE.PlaneGeometry(2.4, 1.2),
-        new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 })
+      const crown = new THREE.Mesh(
+        new THREE.ConeGeometry(0.55*scale, 1.1*scale, 8),
+        new THREE.MeshStandardMaterial({ map: leavesTex || null, color: leavesTex?0xffffff:0x2d6b4e, roughness:0.6 })
       );
-      board.position.set(0, 1.5, -HALF + 0.01);
-      scene.add(board);
+      crown.position.y = 1.25*scale;
 
-      // ===== Player rig & controllers =====
-      const rig = new THREE.Group();
-      rig.position.set(0, 0, 0); // start near room center
-      scene.add(rig);
-      rig.add(camera);
+      const g = new THREE.Group();
+      g.add(trunk, crown);
+      return g;
+    }
 
-      const controllerModelFactory = new XRControllerModelFactory();
-      const controller1 = renderer.xr.getController(0);
-      const controller2 = renderer.xr.getController(1);
-      rig.add(controller1, controller2);
+    function placeTree(x,z,scale){
+      // Keep inside garden and away from pond
+      if (Math.hypot(x,z) > GARDEN_RADIUS - 0.3) return null;
+      if (Math.hypot(x-0,z-0) < POND_RADIUS + 0.5) return null;
+      const t = makeTree(scale);
+      t.position.set(x, 0, z);
+      t.rotation.y = Math.random()*Math.PI*2;
+      scene.add(t);
+      return t;
+    }
+    placeTree(-1.8,  1.2, 1.0);
+    placeTree( 2.0, -1.5, 0.9);
+    placeTree( 0.8,  2.4, 0.75);
 
-      const grip1 = renderer.xr.getControllerGrip(0);
-      const grip2 = renderer.xr.getControllerGrip(1);
-      grip1.add(controllerModelFactory.createControllerModel(grip1));
-      grip2.add(controllerModelFactory.createControllerModel(grip2));
-      rig.add(grip1, grip2);
-
-      // ===== Grabbable cube (debug toy) =====
-      const cube = new THREE.Mesh(
-        new THREE.BoxGeometry(0.3, 0.3, 0.3),
-        new THREE.MeshStandardMaterial({ color: 0x86e1ff, roughness: 0.3 })
-      );
-      cube.position.set(0.5, 1.0, -1.0);
-      scene.add(cube);
-
-      let grabbedBy = null;
-      function tryGrab(ctrl){
-        if (grabbedBy) return;
-        const p = new THREE.Vector3();
-        ctrl.getWorldPosition(p);
-        if (p.distanceTo(cube.position) < 0.25) grabbedBy = ctrl;
+    // ===== Grass (instanced blades within garden disk, not in pond) =====
+    (function scatterGrass(count=700){
+      const bladeGeo = new THREE.PlaneGeometry(0.06, 0.28);
+      bladeGeo.translate(0, 0.14, 0);
+      const bladeMat = new THREE.MeshStandardMaterial({
+        color: 0x3a7a4a,
+        roughness: 0.8,
+        side: THREE.DoubleSide
+      });
+      const blades = new THREE.InstancedMesh(bladeGeo, bladeMat, count);
+      const dummy = new THREE.Object3D();
+      let i = 0;
+      while (i < count) {
+        // sample within garden disk
+        const r = Math.sqrt(Math.random()) * (GARDEN_RADIUS - 0.2);
+        const a = Math.random() * Math.PI*2;
+        const x = Math.cos(a)*r;
+        const z = Math.sin(a)*r;
+        if (Math.hypot(x, z) < POND_RADIUS + 0.25) continue; // avoid pond
+        dummy.position.set(x, 0.011, z);
+        dummy.rotation.y = Math.random()*Math.PI*2;
+        const s = 0.8 + Math.random()*0.6;
+        dummy.scale.set(s, 0.9 + Math.random()*0.6, s);
+        dummy.updateMatrix();
+        blades.setMatrixAt(i, dummy.matrix);
+        i++;
       }
-      function tryRelease(ctrl){ if (grabbedBy === ctrl) grabbedBy = null; }
-      [controller1, controller2].forEach(c=>{
-        c.addEventListener('squeezestart', ()=>tryGrab(c));
-        c.addEventListener('squeezeend', ()=>tryRelease(c));
-      });
+      blades.instanceMatrix.needsUpdate = true;
+      scene.add(blades);
+    })();
 
-      // ===== Locomotion with room bounds clamp =====
-      function applyThumbstickLocomotion(dt) {
-        const session = renderer.xr.getSession();
-        if (!session) return;
+    // ===== Whiteboard for visual anchor =====
+    const board = new THREE.Mesh(
+      new THREE.PlaneGeometry(2.2, 1.1),
+      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 })
+    );
+    board.position.set(0, 1.5, -HALF + 0.01);
+    scene.add(board);
 
-        const speed = 2.0; // m/s
-        for (const source of session.inputSources) {
-          if (!source.gamepad || source.handedness !== 'left') continue;
-          const [x0,y0,x1,y1] = source.gamepad.axes;
-          const sx = (Math.abs(x1) > Math.abs(x0) ? x1 : x0) || 0;
-          const sy = (Math.abs(y1) > Math.abs(y0) ? y1 : y0) || 0;
+    // ===== Player rig & controllers =====
+    const rig = new THREE.Group();
+    rig.position.set(0, 0, 0);
+    scene.add(rig);
+    rig.add(camera);
 
-          const yaw = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ').y;
-          const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)).multiplyScalar(-sy * speed * dt);
-          const strafe  = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)).multiplyScalar(sx * speed * dt);
+    const controllerModelFactory = new XRControllerModelFactory();
+    const controller1 = renderer.xr.getController(0);
+    const controller2 = renderer.xr.getController(1);
+    rig.add(controller1, controller2);
 
-          rig.position.add(forward).add(strafe);
+    const grip1 = renderer.xr.getControllerGrip(0);
+    const grip2 = renderer.xr.getControllerGrip(1);
+    grip1.add(controllerModelFactory.createControllerModel(grip1));
+    grip2.add(controllerModelFactory.createControllerModel(grip2));
+    rig.add(grip1, grip2);
 
-          // Clamp inside the room bounds (small margin from walls)
-          rig.position.x = THREE.MathUtils.clamp(rig.position.x, -HALF + CLAMP_MARGIN, HALF - CLAMP_MARGIN);
-          rig.position.z = THREE.MathUtils.clamp(rig.position.z, -HALF + CLAMP_MARGIN, HALF - CLAMP_MARGIN);
-        }
+    // Grabbable cube (debug)
+    const cube = new THREE.Mesh(
+      new THREE.BoxGeometry(0.3, 0.3, 0.3),
+      new THREE.MeshStandardMaterial({ color: 0x86e1ff, roughness: 0.3 })
+    );
+    cube.position.set(0.6, 1.0, -0.8);
+    scene.add(cube);
+
+    let grabbedBy = null;
+    function tryGrab(ctrl){
+      if (grabbedBy) return;
+      const p = new THREE.Vector3();
+      ctrl.getWorldPosition(p);
+      if (p.distanceTo(cube.position) < 0.25) grabbedBy = ctrl;
+    }
+    function tryRelease(ctrl){ if (grabbedBy === ctrl) grabbedBy = null; }
+    [controller1, controller2].forEach(c=>{
+      c.addEventListener('squeezestart', ()=>tryGrab(c));
+      c.addEventListener('squeezeend', ()=>tryRelease(c));
+    });
+
+    // ===== Locomotion (clamped to room) =====
+    function applyThumbstickLocomotion(dt) {
+      const session = renderer.xr.getSession();
+      if (!session) return;
+      const speed = 1.6; // m/s, a gentle indoor pace
+      for (const source of session.inputSources) {
+        if (!source.gamepad || source.handedness !== 'left') continue;
+        const [x0,y0,x1,y1] = source.gamepad.axes;
+        const sx = (Math.abs(x1) > Math.abs(x0) ? x1 : x0) || 0;
+        const sy = (Math.abs(y1) > Math.abs(y0) ? y1 : y0) || 0;
+        const yaw = new THREE.Euler().setFromQuaternion(camera.quaternion,'YXZ').y;
+        const forward = new THREE.Vector3(Math.sin(yaw),0,Math.cos(yaw)).multiplyScalar(-sy*speed*dt);
+        const strafe  = new THREE.Vector3(Math.cos(yaw),0,-Math.sin(yaw)).multiplyScalar(sx*speed*dt);
+        rig.position.add(forward).add(strafe);
+        rig.position.x = THREE.MathUtils.clamp(rig.position.x, -HALF + CLAMP_MARGIN, HALF - CLAMP_MARGIN);
+        rig.position.z = THREE.MathUtils.clamp(rig.position.z, -HALF + CLAMP_MARGIN, HALF - CLAMP_MARGIN);
       }
+    }
 
-      // ===== Animate =====
-      const clock = new THREE.Clock();
-      renderer.setAnimationLoop(()=>{
-        const dt = clock.getDelta();
+    // ===== Animate =====
+    const clock = new THREE.Clock();
+    renderer.setAnimationLoop(()=>{
+      const dt = clock.getDelta();
+      if (grabbedBy) {
+        const p = new THREE.Vector3(), q = new THREE.Quaternion();
+        grabbedBy.getWorldPosition(p); grabbedBy.getWorldQuaternion(q);
+        cube.position.copy(p); cube.quaternion.copy(q);
+      }
+      if (renderer.xr.isPresenting) applyThumbstickLocomotion(dt);
+      tickWater(dt);
+      renderer.render(scene, camera);
+    });
 
-        // Grab-follow
-        if (grabbedBy) {
-          const p = new THREE.Vector3(), q = new THREE.Quaternion();
-          grabbedBy.getWorldPosition(p); grabbedBy.getWorldQuaternion(q);
-          cube.position.copy(p); cube.quaternion.copy(q);
-        }
-
-        if (renderer.xr.isPresenting) applyThumbstickLocomotion(dt);
-
-        renderer.render(scene, camera);
-      });
-
-      // Resize
-      addEventListener('resize', ()=>{
-        camera.aspect = innerWidth/innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(innerWidth, innerHeight);
-      });
-    </script>
-  </body>
+    addEventListener('resize', ()=>{
+      camera.aspect = innerWidth/innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+  </script>
+</body>
 </html>
