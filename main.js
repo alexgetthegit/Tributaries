@@ -13,15 +13,19 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
 document.body.appendChild(renderer.domElement);
 
-// WebXR UI button
-document.body.appendChild(XRButton.createButton(renderer, { requiredFeatures: ['local-floor'] }));
+// WebXR UI button (patched to optionalFeatures)
+document.body.appendChild(
+  XRButton.createButton(renderer, {
+    optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking', 'local']
+  })
+);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x101114);
 
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 200);
 
-// Non‑VR fallback: Orbit to inspect the scene on desktop
+// Non-VR fallback: Orbit to inspect the scene on desktop
 const orbit = new OrbitControls(camera, renderer.domElement);
 camera.position.set(0, 1.6, 3);
 orbit.target.set(0, 1.5, 0);
@@ -41,7 +45,7 @@ const ground = new THREE.Mesh(
   new THREE.PlaneGeometry(100, 100),
   new THREE.MeshStandardMaterial({ color: 0x1a1e24, roughness: 1.0 })
 );
-ground.rotation.x = -Math.PI/2;
+ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
 scene.add(ground);
 
@@ -54,9 +58,9 @@ function pillar(x, z, color) {
   scene.add(mesh);
 }
 pillar(-2.5, -2, 0x8ec5ff);
-pillar( 2.5, -2, 0xffc98e);
-pillar(-2.5,  2, 0xc98eff);
-pillar( 2.5,  2, 0x8effc9);
+pillar(2.5, -2, 0xffc98e);
+pillar(-2.5, 2, 0xc98eff);
+pillar(2.5, 2, 0x8effc9);
 
 // A simple grabbable cube
 const cube = new THREE.Mesh(
@@ -107,7 +111,7 @@ function tryRelease(ctrl) {
 // Bind squeeze (grip) events
 [controller1, controller2].forEach((ctrl) => {
   ctrl.addEventListener('squeezestart', () => tryGrab(ctrl));
-  ctrl.addEventListener('squeezeend',   () => tryRelease(ctrl));
+  ctrl.addEventListener('squeezeend', () => tryRelease(ctrl));
 });
 
 // Locomotion via thumbstick (left controller): axes[2] (x), axes[3] (y) on Quest Touch
@@ -127,7 +131,7 @@ function applyThumbstickLocomotion(dt) {
     const euler = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
     const yaw = euler.y;
     const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)).multiplyScalar(-sy * speed * dt);
-    const strafe  = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)).multiplyScalar(sx * speed * dt);
+    const strafe = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)).multiplyScalar(sx * speed * dt);
     rig.position.add(forward).add(strafe);
   }
 }
