@@ -3,9 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>WebXR • 360 Sky Ceiling (Cloudflare)</title>
+  <title>WebXR • Wide 360 Sky Dome (Cloudflare)</title>
   <style>
     html, body { margin:0; height:100%; background:#000; color:#fff; }
+    #hud {
+      position:fixed; top:8px; left:8px; background:rgba(0,0,0,.5);
+      padding:6px 10px; border-radius:8px; font:12px system-ui, sans-serif;
+    }
     #hint {
       position:fixed; inset:auto 0 16px 0; display:flex; justify-content:center;
       font-family:system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
@@ -21,6 +25,9 @@
   </style>
 </head>
 <body>
+  <!-- On-screen readout -->
+  <div id="hud">Dome: <span id="pct">92%</span> · widen: ] · narrow: [</div>
+
   <!-- Hidden 360° sky video -->
   <video id="pano" playsinline muted loop preload="metadata"
          crossorigin="anonymous" style="display:none"></video>
@@ -48,7 +55,7 @@
     import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
     import { XRButton } from 'three/addons/webxr/XRButton.js';
 
-    // === Cloudflare R2 URL (change filename if needed) ===
+    // === Cloudflare R2 URL ===
     const VIDEO_URL = 'https://pub-8cbedf6f909d4e39a938e2cee5080e7a.r2.dev/sky360.mp4';
 
     // --- Renderer / scene / camera ---
@@ -61,28 +68,32 @@
     document.body.appendChild(XRButton.createButton(renderer, { optionalFeatures:['local-floor','bounded-floor'] }));
 
     const scene = new THREE.Scene();
-
-    // Spawn at eye height, centered
     const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 200);
     camera.position.set(0, 1.6, 0);
 
-    // Light for the floor
-    scene.add(new THREE.HemisphereLight(0xbfd8ff, 0x202020, 0.6));
-
-    // Flat floor at y=0 (10×10 m)
+    // Optional floor to ground your position
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(10, 10),
       new THREE.MeshStandardMaterial({ color: 0x2f3338, roughness: 1.0 })
     );
     floor.rotation.x = -Math.PI/2;
-    floor.position.y = 0.0;
+    floor.position.y = 0;
     scene.add(floor);
 
-    // --- 360° SKY VIDEO as HALF-DOME CEILING (TOP HEMISPHERE) ---
-    // Correct: start at zenith (thetaStart = 0), go down 90° (thetaLength = PI/2)
-    function makeCeilingDome(radius=50) {
-      const g = new THREE.SphereGeometry(radius, 64, 32, 0, Math.PI*2, 0, Math.PI/2);
-      g.scale(-1, 1, 1); // look inward
+    scene.add(new THREE.HemisphereLight(0xbfd8ff, 0x202020, 0.6));
+
+    // --- 360° SKY VIDEO — WIDE DOME ---
+    // thetaStart = 0 (from zenith), thetaLength = frac * PI (downward coverage)
+    // frac in [0.5 .. 1.0], where 1.0 == full sphere
+    let domeFrac = 0.92; // 92% of full sphere (~165°), very wide
+    const pctEl = document.getElementById('pct');
+    function updatePct() { pctEl.textContent = Math.round(domeFrac*100) + '%'; }
+    updatePct();
+
+    function makeWideDome(radius=50, frac=0.92) {
+      const thetaLength = Math.min(Math.max(frac, 0.5), 1.0) * Math.PI;
+      const g = new THREE.SphereGeometry(radius, 64, 32, 0, Math.PI*2, 0, thetaLength);
+      g.scale(-1, 1, 1); // view inside
       return g;
     }
 
@@ -98,10 +109,24 @@
       tex.generateMipmaps = false;
 
       const mat = new THREE.MeshBasicMaterial({ map: tex, toneMapped:false });
-      skyMesh = new THREE.Mesh(makeCeilingDome(50), mat);
-      skyMesh.position.set(0, 0, 0); // centered; dome is overhead only
+      skyMesh = new THREE.Mesh(makeWideDome(50, domeFrac), mat);
       scene.add(skyMesh);
     }
+
+    function setDomeFrac(f) {
+      domeFrac = Math.min(Math.max(f, 0.5), 1.0);
+      updatePct();
+      if (!skyMesh) return;
+      const g = makeWideDome(50, domeFrac);
+      skyMesh.geometry.dispose();
+      skyMesh.geometry = g;
+    }
+
+    // widen/narrow with ] and [
+    addEventListener('keydown', (e)=>{
+      if (e.key === ']') setDomeFrac(domeFrac + 0.02);
+      if (e.key === '[') setDomeFrac(domeFrac - 0.02);
+    });
 
     async function tryStartVideo(){
       try { await panoEl.play(); } catch {}
@@ -160,7 +185,7 @@
       const p = controls.getObject().position;
       p.x = THREE.MathUtils.clamp(p.x, -HALF, HALF);
       p.z = THREE.MathUtils.clamp(p.z, -HALF, HALF);
-      p.y = 1.6; // keep eye height steady
+      p.y = 1.6;
     }
 
     // --- Animate ---
@@ -178,7 +203,6 @@
       renderer.setSize(innerWidth, innerHeight);
     });
 
-    // Debug hint if video fails
     panoEl.addEventListener('error', e=>{
       console.warn('Video failed to load. Check VIDEO_URL and R2 CORS/public settings.', e);
       console.warn('Direct-link test:', VIDEO_URL);
