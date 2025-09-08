@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>WebXR • 360 Sky (Cloudflare)</title>
+  <title>WebXR • 360 Sky Ceiling (Cloudflare)</title>
   <style>
     html, body { margin:0; height:100%; background:#000; color:#fff; }
     #hint {
@@ -27,7 +27,7 @@
 
   <div id="hint">
     <div class="bubble">
-      Click “Enable Mouse Look”, then use <b>W/A/S/D</b> (or arrows) to move · Press <b>Esc</b> to release · Press <b>H</b> to toggle sky modes
+      Click “Enable Mouse Look”, then use <b>W/A/S/D</b> (or arrows) to move · Press <b>Esc</b> to release
       <button id="lockBtn">Enable Mouse Look</button>
     </div>
   </div>
@@ -48,7 +48,7 @@
     import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
     import { XRButton } from 'three/addons/webxr/XRButton.js';
 
-    // === Cloudflare R2 URL (replace filename if needed) ===
+    // === Cloudflare R2 URL (change filename if needed) ===
     const VIDEO_URL = 'https://pub-8cbedf6f909d4e39a938e2cee5080e7a.r2.dev/sky360.mp4';
 
     // --- Renderer / scene / camera ---
@@ -64,10 +64,10 @@
     const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 200);
     camera.position.set(0, 1.6, 0);
 
-    // Light (just for floor visibility)
+    // Light for the floor
     scene.add(new THREE.HemisphereLight(0xbfd8ff, 0x202020, 0.6));
 
-    // Flat floor (optional, 10×10 m)
+    // Flat floor (10×10 m) — optional, helps ground your position
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(10, 10),
       new THREE.MeshStandardMaterial({ color: 0x2f3338, roughness: 1.0 })
@@ -75,35 +75,18 @@
     floor.rotation.x = -Math.PI/2;
     scene.add(floor);
 
-    // --- 360° SKY VIDEO ---
+    // --- 360° SKY VIDEO as HALF-DOME CEILING ---
+    // Half-dome = top 180°: thetaStart = Math.PI/2 (horizon), thetaLength = Math.PI/2 (up to zenith)
+    function makeHalfDomeGeometry(radius=50) {
+      const g = new THREE.SphereGeometry(radius, 64, 32, 0, Math.PI*2, Math.PI/2, Math.PI/2);
+      g.scale(-1, 1, 1); // look inward
+      return g;
+    }
+
     const panoEl = document.getElementById('pano');
     panoEl.src = VIDEO_URL;
 
     let skyMesh = null;
-    let skyMode = 'dome'; // start in dome mode
-
-    function makeSkyGeometry(mode) {
-      let g;
-      if (mode === 'full') {
-        g = new THREE.SphereGeometry(50, 64, 32);
-      } else if (mode === 'dome') {
-        g = new THREE.SphereGeometry(50, 64, 32, 0, Math.PI * 2, 0, Math.PI * 0.85);
-      } else { // cap
-        g = new THREE.SphereGeometry(50, 64, 32, 0, Math.PI * 2, 0, Math.PI / 2);
-      }
-      g.scale(-1, 1, 1);
-      return g;
-    }
-
-    function setSky(mode) {
-      if (!skyMesh) return;
-      const g = makeSkyGeometry(mode);
-      skyMesh.geometry.dispose();
-      skyMesh.geometry = g;
-      skyMode = mode;
-      console.log('Sky mode:', mode);
-    }
-
     function buildVideoSky(video) {
       const tex = new THREE.VideoTexture(video);
       tex.colorSpace = THREE.SRGBColorSpace;
@@ -112,7 +95,9 @@
       tex.generateMipmaps = false;
 
       const mat = new THREE.MeshBasicMaterial({ map: tex, toneMapped:false });
-      skyMesh = new THREE.Mesh(makeSkyGeometry(skyMode), mat);
+      skyMesh = new THREE.Mesh(makeHalfDomeGeometry(50), mat);
+      // Lift the dome slightly so the rim aligns above the horizon line
+      skyMesh.position.y = 0.0;
       scene.add(skyMesh);
     }
 
@@ -123,15 +108,6 @@
     addEventListener('pointerdown', tryStartVideo, { once:true });
     renderer.xr.addEventListener('sessionstart', tryStartVideo);
     document.addEventListener('visibilitychange', ()=> document.hidden ? panoEl.pause() : tryStartVideo());
-
-    // --- Toggle sky mode with H ---
-    addEventListener('keydown', (e)=>{
-      if (e.key.toLowerCase() === 'h') {
-        if (skyMode === 'cap') setSky('dome');
-        else if (skyMode === 'dome') setSky('full');
-        else setSky('cap');
-      }
-    });
 
     // --- Desktop controls: WASD + mouse look ---
     const controls = new PointerLockControls(camera, renderer.domElement);
@@ -198,6 +174,12 @@
       camera.aspect = innerWidth/innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(innerWidth, innerHeight);
+    });
+
+    // --- Helpful console hint if video fails ---
+    panoEl.addEventListener('error', e=>{
+      console.warn('Video failed to load. Check VIDEO_URL and R2 CORS/public settings.', e);
+      console.warn('Direct-link test:', VIDEO_URL);
     });
   </script>
 </body>
