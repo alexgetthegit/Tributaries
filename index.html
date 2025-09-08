@@ -3,82 +3,73 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>VR Room + 360 Sky</title>
+  <title>WebXR • 360 Sky Only</title>
   <style>
-    html, body { margin:0; height:100%; background:#0a0c10; color:#e6eefc; }
+    html, body { margin:0; height:100%; background:#000; color:#e6eefc; }
     #overlay {
-      position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+      position: fixed; inset: 0; display:flex; align-items:center; justify-content:center;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-      pointer-events: none; user-select: none; text-align: center; line-height: 1.4;
+      pointer-events:none; user-select:none; text-align:center; line-height:1.4;
     }
-    #overlay .panel { background: rgba(0,0,0,.45); padding: 14px 18px; border-radius: 12px; }
+    #overlay .panel { background: rgba(0,0,0,.45); padding: 12px 16px; border-radius: 12px; }
     .small { opacity:.85; font-size:.9rem; }
   </style>
 </head>
 <body>
   <div id="overlay">
     <div class="panel">
-      <div><strong>VR Room + 360 Sky</strong> · Click once then “Enter VR”</div>
-      <div class="small">10×10×3 m room · Skylight shows your video sky</div>
+      <div><strong>360 Sky</strong> · Click once then “Enter VR”</div>
+      <div class="small">Top hemisphere video sky · Simple flat floor</div>
     </div>
   </div>
 
-  <!-- Hidden 360° sky video (mono equirectangular, 2:1) -->
+  <!-- Your 360° sky video (hidden element) -->
   <video id="pano" playsinline muted loop preload="metadata"
          crossorigin="anonymous" style="display:none"></video>
 
-  <!-- Import map for Three -->
+  <!-- Three.js import map -->
   <script type="importmap">
-  {
-    "imports": {
-      "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
-    }
-  }
+  { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
   </script>
 
   <script type="module">
     import * as THREE from 'three';
-    import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
     import { XRButton } from 'https://unpkg.com/three@0.160.0/examples/jsm/webxr/XRButton.js';
-    import { XRControllerModelFactory } from 'https://unpkg.com/three@0.160.0/examples/jsm/webxr/XRControllerModelFactory.js';
 
-    // ===== Config =====
-    const ROOM_SIZE = 10, ROOM_HEIGHT = 3, HALF = ROOM_SIZE/2;
-    const CLAMP_MARGIN = 0.35;
-
-    // ===== Renderer / Scene =====
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    // --- Basic renderer/scene/camera ---
+    const renderer = new THREE.WebGLRenderer({ antialias:true });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
     renderer.setSize(innerWidth, innerHeight);
     renderer.xr.enabled = true;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     document.body.appendChild(renderer.domElement);
-    document.body.appendChild(XRButton.createButton(renderer, { optionalFeatures: ['local-floor','bounded-floor'] }));
+    document.body.appendChild(XRButton.createButton(renderer, { optionalFeatures:['local-floor','bounded-floor'] }));
 
     const scene = new THREE.Scene();
 
-    // ===== Camera & Orbit (desktop preview) =====
     const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 200);
-    const orbit = new OrbitControls(camera, renderer.domElement);
-    camera.position.set(0, 1.7, HALF - 1.0);
-    orbit.target.set(0, 1.4, 0);
-    orbit.update();
+    camera.position.set(0, 1.6, 3);
 
-    // ===== Lights =====
-    scene.add(new THREE.HemisphereLight(0xbfd8ff, 0x1a2028, 0.55));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.0);
-    sun.position.set(-2, 5, 2);
-    scene.add(sun);
+    // Soft light so the floor isn’t pitch black
+    scene.add(new THREE.HemisphereLight(0xbfd8ff, 0x202020, 0.6));
 
-    // ===== 360° SKY VIDEO (top hemisphere) =====
+    // --- Flat floor (plain material) ---
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(10, 10),
+      new THREE.MeshStandardMaterial({ color: 0x30343a, roughness: 1.0 })
+    );
+    floor.rotation.x = -Math.PI/2;
+    scene.add(floor);
+
+    // --- 360° SKY VIDEO (TOP HEMISPHERE) ---
     const panoEl = document.getElementById('pano');
-    panoEl.src = 'videos/sky360.mp4';  // <-- your uploaded file
+    panoEl.src = 'videos/sky360.mp4'; // <-- your uploaded file
 
     let skyMesh = null;
     function buildVideoSky(video) {
-      // Top hemisphere only (sky), hides horizon/ground even if present
+      // Top half sphere so any ground/horizon stays hidden
       const geo = new THREE.SphereGeometry(50, 64, 32, 0, Math.PI*2, 0, Math.PI/2);
-      geo.scale(-1, 1, 1); // view inside
+      geo.scale(-1, 1, 1); // view the inside
 
       const tex = new THREE.VideoTexture(video);
       tex.colorSpace = THREE.SRGBColorSpace;
@@ -86,105 +77,29 @@
       tex.magFilter = THREE.LinearFilter;
       tex.generateMipmaps = false;
 
-      const mat = new THREE.MeshBasicMaterial({ map: tex, toneMapped: false });
+      const mat = new THREE.MeshBasicMaterial({ map: tex, toneMapped:false });
       skyMesh = new THREE.Mesh(geo, mat);
       scene.add(skyMesh);
     }
 
-    async function tryStartPano() {
-      try { await panoEl.play(); } catch { /* wait for user gesture */ }
+    async function tryStartPano(){
+      try { await panoEl.play(); } catch {}
       if (!skyMesh && !panoEl.paused) buildVideoSky(panoEl);
     }
-    // Start on click and on XR session start
+
+    // Start on click (desktop) and when XR session begins (headset)
     addEventListener('pointerdown', tryStartPano, { once:true });
     renderer.xr.addEventListener('sessionstart', tryStartPano);
     document.addEventListener('visibilitychange', ()=> document.hidden ? panoEl.pause() : tryStartPano());
 
-    // ===== Room: floor / walls / ceiling with skylight hole =====
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0xe8eaee, roughness: 0.92 });
-    function makeWall(w,h,x,z,ry){ const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h), wallMat); m.position.set(x,h/2,z); m.rotation.y=ry; return m; }
-    scene.add(
-      makeWall(ROOM_SIZE, ROOM_HEIGHT,  HALF, 0, -Math.PI/2),
-      makeWall(ROOM_SIZE, ROOM_HEIGHT, -HALF, 0,  Math.PI/2),
-      makeWall(ROOM_SIZE, ROOM_HEIGHT, 0,  HALF,  Math.PI),
-      makeWall(ROOM_SIZE, ROOM_HEIGHT, 0, -HALF,  0)
-    );
-
-    // Ceiling with skylight (4m x 2.5m)
-    (function makeCeilingWithSkylight(){
-      const s = new THREE.Shape();
-      s.moveTo(-HALF,-HALF); s.lineTo(HALF,-HALF); s.lineTo(HALF,HALF); s.lineTo(-HALF,HALF); s.closePath();
-      const hole = new THREE.Path(); const sx=2.0, sz=1.25;
-      hole.moveTo(-sx,-sz); hole.lineTo(sx,-sz); hole.lineTo(sx,sz); hole.lineTo(-sx,sz); hole.closePath();
-      s.holes.push(hole);
-      const ceiling = new THREE.Mesh(new THREE.ShapeGeometry(s,1), new THREE.MeshStandardMaterial({ color: 0xdfe3ea, roughness: 0.96 }));
-      ceiling.rotation.x = Math.PI/2; ceiling.position.y = ROOM_HEIGHT;
-      scene.add(ceiling);
-    })();
-
-    // Skylight panel (soft fill)
-    const skylightPanel = new THREE.Mesh(new THREE.PlaneGeometry(2.6,1.6), new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped:false }));
-    skylightPanel.rotation.x = Math.PI/2; skylightPanel.position.set(0, ROOM_HEIGHT-0.05, 0);
-    scene.add(skylightPanel);
-
-    // ===== Flat floor (sand/grass) =====
-    const tex = new THREE.TextureLoader();
-    const albedo = tex.load('textures/sand_albedo.jpg', t=>{ t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(4,4); }, undefined, ()=>{});
-    const normal = tex.load('textures/sand_normal.jpg', t=>{ t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(4,4); }, undefined, ()=>{});
-    const rough  = tex.load('textures/sand_roughness.jpg', t=>{ t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(4,4); }, undefined, ()=>{});
-
-    const floorMat = new THREE.MeshStandardMaterial({
-      map: albedo || null,
-      normalMap: normal || null,
-      roughnessMap: rough || null,
-      color: albedo ? 0xffffff : 0x2d3138,
-      roughness: 1.0,
-      metalness: 0.0
-    });
-
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_SIZE, ROOM_SIZE), floorMat);
-    floor.rotation.x = -Math.PI/2;
-    scene.add(floor);
-
-    // ===== Player rig & controllers =====
-    const rig = new THREE.Group();
-    rig.position.set(0,0,0); scene.add(rig); rig.add(camera);
-
-    const controllerFactory = new XRControllerModelFactory();
-    const controller1 = renderer.xr.getController(0), controller2 = renderer.xr.getController(1);
-    rig.add(controller1, controller2);
-    const grip1 = renderer.xr.getControllerGrip(0), grip2 = renderer.xr.getControllerGrip(1);
-    grip1.add(controllerFactory.createControllerModel(grip1));
-    grip2.add(controllerFactory.createControllerModel(grip2));
-    rig.add(grip1, grip2);
-
-    // ===== Simple locomotion (clamped to room) =====
-    function locomotion(dt) {
-      const session = renderer.xr.getSession(); if (!session) return;
-      const speed = 1.6;
-      for (const src of session.inputSources) {
-        if (!src.gamepad || src.handedness !== 'left') continue;
-        const [x0,y0,x1,y1] = src.gamepad.axes;
-        const sx = (Math.abs(x1)>Math.abs(x0)?x1:x0) || 0;
-        const sy = (Math.abs(y1)>Math.abs(y0)?y1:y0) || 0;
-        const yaw = new THREE.Euler().setFromQuaternion(camera.quaternion,'YXZ').y;
-        const fwd = new THREE.Vector3(Math.sin(yaw),0,Math.cos(yaw)).multiplyScalar(-sy*speed*dt);
-        const str = new THREE.Vector3(Math.cos(yaw),0,-Math.sin(yaw)).multiplyScalar(sx*speed*dt);
-        rig.position.add(fwd).add(str);
-        rig.position.x = THREE.MathUtils.clamp(rig.position.x, -HALF+CLAMP_MARGIN, HALF-CLAMP_MARGIN);
-        rig.position.z = THREE.MathUtils.clamp(rig.position.z, -HALF+CLAMP_MARGIN, HALF-CLAMP_MARGIN);
-      }
-    }
-
-    // ===== Animate =====
+    // --- Animate ---
     const clock = new THREE.Clock();
     renderer.setAnimationLoop(()=>{
-      const dt = Math.min(0.05, clock.getDelta());
-      if (renderer.xr.isPresenting) locomotion(dt);
+      clock.getDelta(); // reserved if you add movement later
       renderer.render(scene, camera);
     });
 
-    // Resize
+    // --- Resize ---
     addEventListener('resize', ()=>{
       camera.aspect = innerWidth/innerHeight;
       camera.updateProjectionMatrix();
