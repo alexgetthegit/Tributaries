@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>360 Sky • Desktop Move + WebXR</title>
+  <title>WebXR • 360 Sky (Cloudflare)</title>
   <style>
-    html, body { margin:0; height:100%; background:#000; }
+    html, body { margin:0; height:100%; background:#000; color:#fff; }
     #hint {
       position:fixed; inset:auto 0 16px 0; display:flex; justify-content:center;
       font-family:system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
@@ -20,7 +20,7 @@
   </style>
 </head>
 <body>
-  <!-- Hidden 360 sky video -->
+  <!-- Hidden 360° sky video -->
   <video id="pano" playsinline muted loop preload="metadata"
          crossorigin="anonymous" style="display:none"></video>
 
@@ -31,7 +31,7 @@
     </div>
   </div>
 
-  <!-- Import map for Three -->
+  <!-- Import map -->
   <script type="importmap">
   {
     "imports": {
@@ -47,6 +47,10 @@
     import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
     import { XRButton } from 'three/addons/webxr/XRButton.js';
 
+    // === Cloudflare R2 URL ===
+    // If your object key isn't 'sky360.mp4', replace it below with the exact filename/key.
+    const VIDEO_URL = 'https://pub-8cbedf6f909d4e39a938e2cee5080e7a.r2.dev/sky360.mp4';
+
     // --- Renderer / scene / camera ---
     const renderer = new THREE.WebGLRenderer({ antialias:true });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
@@ -60,10 +64,10 @@
     const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 200);
     camera.position.set(0, 1.6, 3);
 
-    // Soft light for floor visibility
+    // Soft light for the floor
     scene.add(new THREE.HemisphereLight(0xbfd8ff, 0x202020, 0.6));
 
-    // --- Flat floor (10×10 m) ---
+    // Flat floor (10×10 m) so you can sense scale; remove if you want pure sky
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(10, 10),
       new THREE.MeshStandardMaterial({ color: 0x2f3338, roughness: 1.0 })
@@ -73,11 +77,11 @@
 
     // --- 360° SKY VIDEO (top hemisphere) ---
     const panoEl = document.getElementById('pano');
-    panoEl.src = 'videos/sky360.mp4'; // <- your file
+    panoEl.src = VIDEO_URL;
 
     let skyMesh = null;
     function buildVideoSky(video) {
-      // Only the upper half-sphere so no ground is visible
+      // Only the upper half-sphere so any ground/horizon remains hidden
       const geo = new THREE.SphereGeometry(50, 64, 32, 0, Math.PI*2, 0, Math.PI/2);
       geo.scale(-1, 1, 1); // look inward
 
@@ -87,8 +91,8 @@
       tex.magFilter = THREE.LinearFilter;
       tex.generateMipmaps = false;
 
-      skyMesh = new THREE.Mesh(new THREE.MeshBasicMaterial({ map: tex, toneMapped:false }));
-      skyMesh.geometry = geo;
+      const mat = new THREE.MeshBasicMaterial({ map: tex, toneMapped:false });
+      skyMesh = new THREE.Mesh(geo, mat);
       scene.add(skyMesh);
     }
 
@@ -96,7 +100,7 @@
       try { await panoEl.play(); } catch {}
       if (!skyMesh && !panoEl.paused) buildVideoSky(panoEl);
     }
-    // Start on user gesture and on XR session start
+    // Start on click and on XR session start (user gesture requirement)
     addEventListener('pointerdown', tryStartVideo, { once:true });
     renderer.xr.addEventListener('sessionstart', tryStartVideo);
     document.addEventListener('visibilitychange', ()=> document.hidden ? panoEl.pause() : tryStartVideo());
@@ -106,12 +110,10 @@
     const hint = document.getElementById('hint');
     const lockBtn = document.getElementById('lockBtn');
 
-    // Lock/unlock UI
     lockBtn.addEventListener('click', () => { controls.lock(); tryStartVideo(); });
     controls.addEventListener('lock',  () => hint.classList.add('hidden'));
     controls.addEventListener('unlock',()=> hint.classList.remove('hidden'));
 
-    // Movement state
     const keys = { forward:false, back:false, left:false, right:false };
     addEventListener('keydown', (e)=>{
       switch(e.code){
@@ -130,56 +132,35 @@
       }
     });
 
-    // Simple FPS-style movement (XZ only), clamped to a 10×10 area
     const vel = new THREE.Vector3();
     const dir = new THREE.Vector3();
-    const SPEED = 2.0;        // m/s
-    const DAMP  = 8.0;        // higher = snappier stop
-    const HALF  = 5.0 - 0.1;  // bounds (room half-size minus margin)
+    const SPEED = 2.0, DAMP = 8.0, HALF = 5.0 - 0.1;
 
     function updateDesktopMovement(dt){
       if (!controls.isLocked) return;
-      dir.set(
-        (keys.right? 1:0) - (keys.left? 1:0),
-        0,
-        (keys.back? 1:0) - (keys.forward? 1:0)
-      ).normalize();
-
-      // accelerate toward wish direction in camera space
-      if (dir.lengthSq() > 0){
-        const forward = new THREE.Vector3();
-        controls.getDirection(forward); // camera forward
-        forward.y = 0; forward.normalize();
+      dir.set((+keys.right)-(+keys.left), 0, (+keys.back)-(+keys.forward)).normalize();
+      if (dir.lengthSq()){
+        const forward = new THREE.Vector3(); controls.getDirection(forward); forward.y = 0; forward.normalize();
         const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0,1,0)).negate();
-        const wish = new THREE.Vector3()
-          .addScaledVector(forward, -dir.z)
-          .addScaledVector(right,    dir.x)
-          .setLength(SPEED);
+        const wish = new THREE.Vector3().addScaledVector(forward, -dir.z).addScaledVector(right, dir.x).setLength(SPEED);
         vel.lerp(wish, Math.min(1, dt*DAMP));
-      } else {
-        vel.lerp(new THREE.Vector3(0,0,0), Math.min(1, dt*DAMP));
-      }
+      } else vel.lerp(new THREE.Vector3(), Math.min(1, dt*DAMP));
 
-      // apply motion (keep y fixed ~1.6)
-      const deltaMove = vel.clone().multiplyScalar(dt);
-      controls.moveRight(deltaMove.x);
-      controls.moveForward(deltaMove.z);
+      const d = vel.clone().multiplyScalar(dt);
+      controls.moveRight(d.x);
+      controls.moveForward(d.z);
 
-      // clamp inside a ~10×10 square
-      const pos = controls.getObject().position;
-      pos.x = THREE.MathUtils.clamp(pos.x, -HALF, HALF);
-      pos.z = THREE.MathUtils.clamp(pos.z, -HALF, HALF);
-      pos.y = 1.6; // keep “eye height” steady
+      const p = controls.getObject().position;
+      p.x = THREE.MathUtils.clamp(p.x, -HALF, HALF);
+      p.z = THREE.MathUtils.clamp(p.z, -HALF, HALF);
+      p.y = 1.6;
     }
 
-    // --- Animation loop ---
+    // --- Animate ---
     const clock = new THREE.Clock();
     renderer.setAnimationLoop(()=>{
       const dt = Math.min(0.05, clock.getDelta());
-
-      // Only run keyboard/mouse movement when NOT in XR
       if (!renderer.xr.isPresenting) updateDesktopMovement(dt);
-
       renderer.render(scene, camera);
     });
 
@@ -188,6 +169,12 @@
       camera.aspect = innerWidth/innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(innerWidth, innerHeight);
+    });
+
+    // --- Helpful console hints if something goes wrong ---
+    panoEl.addEventListener('error', e=>{
+      console.warn('Video failed to load. Check VIDEO_URL and R2 CORS/public settings.', e);
+      console.warn('Direct-link test:', VIDEO_URL);
     });
   </script>
 </body>
