@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>WebXR • 360 Sky Ceiling (Locked)</title>
+  <title>WebXR • Toggle Handmade ↔ GLB</title>
   <style>
     html, body { margin:0; height:100%; background:#000; color:#fff; }
     #hud {
       position:fixed; top:8px; left:8px; background:rgba(0,0,0,.5);
-      padding:6px 10px; border-radius:8px; font:12px system-ui, sans-serif;
+      padding:6px 10px; border-radius:8px; font:12px system-ui, sans-serif; line-height:1.35;
     }
     #hint {
       position:fixed; inset:auto 0 16px 0; display:flex; justify-content:center;
@@ -25,9 +25,12 @@
   </style>
 </head>
 <body>
-  <div id="hud">Texture pan: <b>J/L</b> yaw, <b>I/K</b> tilt</div>
+  <div id="hud">
+    <div><b>Mode:</b> <span id="modeLabel">loading…</span> · Switch: <b>1</b>=Handmade, <b>2</b>=GLB</div>
+    <div>Handmade: Texture pan <b>J/L</b> yaw, <b>I/K</b> tilt · Desktop: <b>W/A/S/D</b> + mouse look</div>
+  </div>
 
-  <!-- Hidden 360° sky video -->
+  <!-- Hidden 360° sky video (used by handmade mode) -->
   <video id="pano" playsinline muted loop preload="metadata"
          crossorigin="anonymous" style="display:none"></video>
 
@@ -43,8 +46,7 @@
   {
     "imports": {
       "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-      "three/addons/controls/PointerLockControls.js": "https://unpkg.com/three@0.160.0/examples/jsm/controls/PointerLockControls.js",
-      "three/addons/webxr/XRButton.js": "https://unpkg.com/three@0.160.0/examples/jsm/webxr/XRButton.js"
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
     }
   }
   </script>
@@ -53,11 +55,14 @@
     import * as THREE from 'three';
     import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
     import { XRButton } from 'three/addons/webxr/XRButton.js';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-    // === Cloudflare R2 URL (change filename if needed) ===
+    // ===== Config =====
+    const DEFAULT_MODE = 'handmade';          // 'handmade' or 'glb'
     const VIDEO_URL = 'https://pub-8cbedf6f909d4e39a938e2cee5080e7a.r2.dev/sky360.mp4';
+    const GLB_URL   = 'models/world.glb';     // change if your file name/path differs
 
-    // --- Renderer / scene / camera ---
+    // ===== Renderer / Scene / Camera =====
     const renderer = new THREE.WebGLRenderer({ antialias:true });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
     renderer.setSize(innerWidth, innerHeight);
@@ -67,87 +72,152 @@
     document.body.appendChild(XRButton.createButton(renderer, { optionalFeatures:['local-floor','bounded-floor'] }));
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 200);
+    const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 2000);
     camera.position.set(0, 1.6, 0);
 
-    // Ground reference so you know where you are (10×10 m, y=0)
-    const floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(10, 10),
-      new THREE.MeshStandardMaterial({ color: 0x2f3338, roughness: 1.0 })
-    );
-    floor.rotation.x = -Math.PI/2;
-    floor.position.y = 0;
-    scene.add(floor);
-
+    // Shared lights
     scene.add(new THREE.HemisphereLight(0xbfd8ff, 0x202020, 0.6));
 
-    // --- Ceiling-only sky geometry (no walls) ---
-    // thetaStart = 0 (from zenith), thetaLength = PI/2 (down to horizon) → ceiling dome
-    function makeCeilingDome(radius=50) {
-      const g = new THREE.SphereGeometry(radius, 64, 32, 0, Math.PI*2, 0, Math.PI/2);
-      g.scale(-1, 1, 1); // look inward
-      return g;
-    }
+    // Top-level “layers”
+    const handmadeGroup = new THREE.Group(); handmadeGroup.name = 'HandmadeGroup';
+    const glbGroup = new THREE.Group(); glbGroup.name = 'GLBGroup';
+    scene.add(handmadeGroup, glbGroup);
 
-    // --- 360° SKY VIDEO as texture with pan controls ---
+    // ====== Handmade scene (your current file) ======
+    let skyMesh = null, skyTex = null;
     const panoEl = document.getElementById('pano');
     panoEl.src = VIDEO_URL;
 
-    let skyMesh = null;
-    let skyTex = null;
-
-    function buildVideoSky(video) {
-      skyTex = new THREE.VideoTexture(video);
-      skyTex.colorSpace = THREE.SRGBColorSpace;
-      skyTex.minFilter = THREE.LinearFilter;
-      skyTex.magFilter = THREE.LinearFilter;
-      skyTex.generateMipmaps = false;
-
-      // Enable panning/rotation in UV space
-      skyTex.wrapS = THREE.RepeatWrapping; // yaw (horizontal)
-      skyTex.wrapT = THREE.ClampToEdgeWrapping; // vertical: usually clamp to avoid seams
-      skyTex.center.set(0.5, 0.5); // for rotation if needed
-
-      const mat = new THREE.MeshBasicMaterial({ map: skyTex, toneMapped:false });
-      skyMesh = new THREE.Mesh(makeCeilingDome(50), mat);
-      scene.add(skyMesh);
+    function makeCeilingDome(radius=50) {
+      // top hemisphere: start at zenith (0), go down to horizon (PI/2)
+      const g = new THREE.SphereGeometry(radius, 64, 32, 0, Math.PI*2, 0, Math.PI/2);
+      g.scale(-1, 1, 1);
+      return g;
     }
 
-    async function tryStartVideo(){
-      try { await panoEl.play(); } catch {}
-      if (!skyMesh && !panoEl.paused) buildVideoSky(panoEl);
-    }
-    addEventListener('pointerdown', tryStartVideo, { once:true });
-    renderer.xr.addEventListener('sessionstart', tryStartVideo);
-    document.addEventListener('visibilitychange', ()=> document.hidden ? panoEl.pause() : tryStartVideo());
+    function buildHandmadeScene(group) {
+      // Floor (10×10 m @ y=0)
+      const floor = new THREE.Mesh(
+        new THREE.PlaneGeometry(10, 10),
+        new THREE.MeshStandardMaterial({ color: 0x2f3338, roughness: 1.0 })
+      );
+      floor.rotation.x = -Math.PI / 2;
+      floor.position.y = 0;
+      group.add(floor);
 
-    // --- Texture pan controls: J/L (yaw), I/K (tilt) ---
-    // Horizontal pan is offset.x (wraps). Vertical pan is offset.y (0..1).
-    addEventListener('keydown', (e)=>{
-      if (!skyTex) return;
-      const step = 0.01;
-      switch (e.key.toLowerCase()) {
-        case 'j': // yaw left
-          skyTex.offset.x = (skyTex.offset.x - step) % 1;
-          break;
-        case 'l': // yaw right
-          skyTex.offset.x = (skyTex.offset.x + step) % 1;
-          break;
-        case 'i': // tilt up (move texture upward)
-          skyTex.offset.y = Math.max(0, Math.min(1, skyTex.offset.y + step));
-          break;
-        case 'k': // tilt down
-          skyTex.offset.y = Math.max(0, Math.min(1, skyTex.offset.y - step));
-          break;
+      // Sky video (ceiling dome)
+      function buildVideoSky(video) {
+        skyTex = new THREE.VideoTexture(video);
+        skyTex.colorSpace = THREE.SRGBColorSpace;
+        skyTex.minFilter = THREE.LinearFilter;
+        skyTex.magFilter = THREE.LinearFilter;
+        skyTex.generateMipmaps = false;
+        // Allow panning
+        skyTex.wrapS = THREE.RepeatWrapping;
+        skyTex.wrapT = THREE.ClampToEdgeWrapping;
+        skyTex.center.set(0.5, 0.5);
+
+        const mat = new THREE.MeshBasicMaterial({ map: skyTex, toneMapped:false });
+        skyMesh = new THREE.Mesh(makeCeilingDome(50), mat);
+        group.add(skyMesh);
       }
+
+      async function tryStartVideo(){
+        try { await panoEl.play(); } catch {}
+        if (!skyMesh && !panoEl.paused) buildVideoSky(panoEl);
+      }
+      // kick off on click and XR start (only when handmade is visible)
+      addEventListener('pointerdown', ()=>{ if(handmadeGroup.visible) tryStartVideo(); }, { once:true });
+      renderer.xr.addEventListener('sessionstart', ()=>{ if(handmadeGroup.visible) tryStartVideo(); });
+      document.addEventListener('visibilitychange', ()=> document.hidden ? panoEl.pause() : (handmadeGroup.visible && tryStartVideo()));
+
+      // Keyboard panning for the sky texture
+      addEventListener('keydown', (e)=>{
+        if (!handmadeGroup.visible || !skyTex) return;
+        const step = 0.01;
+        switch (e.key.toLowerCase()) {
+          case 'j': skyTex.offset.x = (skyTex.offset.x - step) % 1; break;
+          case 'l': skyTex.offset.x = (skyTex.offset.x + step) % 1; break;
+          case 'i': skyTex.offset.y = Math.min(1, skyTex.offset.y + step); break;
+          case 'k': skyTex.offset.y = Math.max(0, skyTex.offset.y - step); break;
+        }
+      });
+
+      // Helpful error hint
+      panoEl.addEventListener('error', e=>{
+        if (!handmadeGroup.visible) return;
+        console.warn('Video failed to load. Check VIDEO_URL and R2 CORS/public settings.', e);
+        console.warn('Direct-link test:', VIDEO_URL);
+      });
+    }
+
+    // Build handmade now (we’ll show/hide via mode)
+    buildHandmadeScene(handmadeGroup);
+
+    // ====== GLB world loader ======
+    let glbLoaded = false;
+    async function loadGLBWorld(group) {
+      if (glbLoaded) return;
+      const loader = new GLTFLoader();
+      loader.load(GLB_URL, (gltf)=>{
+        const model = gltf.scene;
+        // Optional: center on origin
+        const box = new THREE.Box3().setFromObject(model);
+        const center = box.getCenter(new THREE.Vector3());
+        model.position.sub(center); // center model
+        // Optional: scale to reasonable size (fits within ~10×10×5)
+        const size = box.getSize(new THREE.Vector3());
+        const target = new THREE.Vector3(10,5,10);
+        const s = Math.min(target.x/(size.x||1), target.y/(size.y||1), target.z/(size.z||1));
+        model.scale.setScalar(THREE.MathUtils.clamp(s, 0.01, 10));
+
+        model.traverse(o=>{ o.castShadow = o.receiveShadow = true; });
+        group.add(model);
+        glbLoaded = true;
+      }, undefined, (err)=> console.error('GLB load failed:', err));
+    }
+
+    // ====== Mode toggle (show/hide groups, handle video pause/resume) ======
+    const modeLabel = document.getElementById('modeLabel');
+    function setMode(mode){
+      const m = (mode === 'glb') ? 'glb' : 'handmade';
+
+      handmadeGroup.visible = (m === 'handmade');
+      glbGroup.visible = (m === 'glb');
+
+      modeLabel.textContent = (m === 'handmade') ? 'Handmade' : 'GLB';
+
+      // manage sky video playback
+      if (m === 'handmade') {
+        // resume / build if needed
+        if (panoEl.paused) { panoEl.play().catch(()=>{}); }
+        if (!skyMesh && !panoEl.paused) {
+          // safety: ensure sky exists
+          const evt = new Event('pointerdown'); window.dispatchEvent(evt);
+        }
+      } else {
+        // pause when hidden
+        if (!panoEl.paused) panoEl.pause();
+        // ensure GLB is loaded
+        loadGLBWorld(glbGroup);
+      }
+    }
+
+    // Default mode
+    setMode(DEFAULT_MODE);
+
+    // Keyboard switchers
+    addEventListener('keydown', (e)=>{
+      if (e.key === '1') setMode('handmade');
+      if (e.key === '2') setMode('glb');
     });
 
-    // --- Desktop controls: WASD + mouse look ---
+    // ====== Desktop first-person controls (WASD + mouse look) ======
     const controls = new PointerLockControls(camera, renderer.domElement);
     const hint = document.getElementById('hint');
     const lockBtn = document.getElementById('lockBtn');
 
-    lockBtn.addEventListener('click', () => { controls.lock(); tryStartVideo(); });
+    lockBtn.addEventListener('click', () => { controls.lock(); });
     controls.addEventListener('lock',  () => hint.classList.add('hidden'));
     controls.addEventListener('unlock',()=> hint.classList.remove('hidden'));
 
@@ -171,7 +241,7 @@
 
     const vel = new THREE.Vector3();
     const dir = new THREE.Vector3();
-    const SPEED = 2.0, DAMP = 8.0, HALF = 5.0 - 0.1;
+    const SPEED = 2.0, DAMP = 8.0, HALF = 25;
 
     function updateDesktopMovement(dt){
       if (!controls.isLocked) return;
@@ -191,10 +261,10 @@
       const p = controls.getObject().position;
       p.x = THREE.MathUtils.clamp(p.x, -HALF, HALF);
       p.z = THREE.MathUtils.clamp(p.z, -HALF, HALF);
-      p.y = 1.6; // eye height
+      p.y = 1.6;
     }
 
-    // --- Animate ---
+    // ====== Animate ======
     const clock = new THREE.Clock();
     renderer.setAnimationLoop(()=>{
       const dt = Math.min(0.05, clock.getDelta());
@@ -202,16 +272,11 @@
       renderer.render(scene, camera);
     });
 
-    // --- Resize ---
+    // Resize
     addEventListener('resize', ()=>{
       camera.aspect = innerWidth/innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(innerWidth, innerHeight);
-    });
-
-    panoEl.addEventListener('error', e=>{
-      console.warn('Video failed to load. Check VIDEO_URL and R2 CORS/public settings.', e);
-      console.warn('Direct-link test:', VIDEO_URL);
     });
   </script>
 </body>
