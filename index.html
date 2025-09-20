@@ -7,30 +7,39 @@
   <style>
     html,body{margin:0;height:100%;overflow:hidden;background:#000;}
     #hud{
-      position:fixed;left:10px;top:10px;color:#ddd;background:rgba(0,0,0,.6);
-      padding:8px 10px;border-radius:8px;font:12px/1.35 system-ui;white-space:pre;
+      position:fixed;left:10px;top:10px;color:#eee;background:rgba(0,0,0,.6);
+      padding:8px 10px;border-radius:8px;font:12px/1.35 system-ui;white-space:pre;z-index:10;
     }
+    #enterVR{
+      position:fixed;right:12px;bottom:12px;z-index:10;
+      background:#1a7cff;color:#fff;border:0;border-radius:10px;
+      padding:10px 14px;font:14px/1.2 system-ui;cursor:pointer;display:none;
+      box-shadow:0 6px 16px rgba(0,0,0,.35);
+    }
+    #enterVR[disabled]{opacity:.6;cursor:not-allowed}
   </style>
 </head>
 <body>
   <div id="hud">drag=orbit · wheel=zoom · right-drag=pan
 Move: WASD (+Shift run)   •  VR: left stick move, right stick snap
-Orient: Q/E yaw ±15° · Z/X tilt ±15° · G ground · F lay flat</div>
+Orient: Q/E yaw ±15° · Z/X tilt ±15° · G ground · F lay flat
+Status: starting…</div>
+  <button id="enterVR">Enter VR</button>
 
   <script type="module">
   import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
   import { OrbitControls }   from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
-  import { VRButton }        from 'https://unpkg.com/three@0.160.0/examples/jsm/webxr/VRButton.js';
   import { GLTFLoader }      from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
 
-  // === CONFIG ===
+  // ---------- config ----------
   const GLB_URL = 'https://r2-public.alexpurcellmusic.workers.dev/drone_scene_big.glb';
-  const SNAP_DEG = 30;            // right-stick snap turn
-  const DESKTOP_SPEED = 6.0;      // m/s
-  const DESKTOP_SPRINT = 12.0;    // m/s
-  const VR_SPEED = 3.0;           // m/s smooth locomotion
+  const DESKTOP_SPEED = 6, DESKTOP_SPRINT = 12, VR_SPEED = 3, SNAP_DEG = 30;
 
-  // === THREE BASICS ===
+  // ---------- HUD helpers ----------
+  const hud = document.getElementById('hud');
+  const setStatus = (t)=> hud.textContent = hud.textContent.replace(/Status:.*/,'Status: '+t);
+
+  // ---------- three basics ----------
   const renderer = new THREE.WebGLRenderer({ antialias:true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.setSize(innerWidth, innerHeight);
@@ -42,109 +51,99 @@ Orient: Q/E yaw ±15° · Z/X tilt ±15° · G ground · F lay flat</div>
   scene.background = new THREE.Color(0x101014);
 
   const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.05, 20000);
-  camera.position.set(6, 4, 6);
+  camera.position.set(4, 2.2, 4);
 
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
 
   // lights
   scene.add(new THREE.HemisphereLight(0xffffff, 0x202030, 0.9));
-  const sun = new THREE.DirectionalLight(0xffffff, 1.2);
-  sun.position.set(30, 80, 10);
-  scene.add(sun);
+  const sun = new THREE.DirectionalLight(0xffffff, 1.2); sun.position.set(30,80,10); scene.add(sun);
 
-  // ground grid (subtle)
-  const grid = new THREE.GridHelper(2000, 200, 0x444444, 0x222222);
-  grid.material.transparent = true;
-  grid.material.opacity = 0.25;
-  scene.add(grid);
+  // grid & placeholder cube (so desktop never looks black)
+  const grid = new THREE.GridHelper(200, 200, 0x555, 0x222);
+  grid.material.transparent = true; grid.material.opacity = .35; scene.add(grid);
+  const placeholder = new THREE.Mesh(
+    new THREE.BoxGeometry(1,1,1),
+    new THREE.MeshStandardMaterial({ color: 0x2da3ff })
+  );
+  placeholder.position.y = 0.5; scene.add(placeholder);
 
-  // === LOAD MODEL ===
+  // ---------- load model ----------
   const loader = new GLTFLoader();
   let model = null;
 
+  function frameCameraTo(object){
+    const box = new THREE.Box3().setFromObject(object);
+    const size = box.getSize(new THREE.Vector3());
+    const dist = size.length() / (2*Math.tan(THREE.MathUtils.degToRad(camera.fov)/2));
+    camera.position.set(dist, Math.max(dist*0.45, 2), dist);
+    controls.target.set(0, Math.max(size.y*0.5, 0), 0);
+    controls.update();
+  }
+  function recenterAndGround(object, flat=false){
+    const box = new THREE.Box3().setFromObject(object);
+    const center = box.getCenter(new THREE.Vector3());
+    object.position.sub(center);
+    if (flat) object.rotation.x = -Math.PI/2;
+    const b2 = new THREE.Box3().setFromObject(object);
+    object.position.y -= b2.min.y;
+  }
+
+  // probe headers for clarity
+  fetch(GLB_URL, { method:'HEAD' })
+    .then(r => setStatus(`[HEAD ${r.status}] ${r.headers.get('content-type')||''}`))
+    .catch(()=>setStatus('HEAD failed (still trying to load)'));
+
   loader.load(
     GLB_URL,
-    (gltf) => {
+    (gltf)=>{
       model = gltf.scene || gltf.scenes?.[0];
       scene.add(model);
+      scene.remove(placeholder);
 
-      // center on origin & place on ground
-      recenterAndGround(model, /*flat=*/false);
-
-      // basic material safety: no black PBR
       model.traverse(o=>{
-        if (!o.isMesh) return;
+        if(!o.isMesh) return;
         if (o.geometry && !o.geometry.attributes.normal) o.geometry.computeVertexNormals();
-        const m = o.material; if (!m) return;
-        if ('metalness' in m) m.metalness = 0.0;
-        if ('roughness' in m) m.roughness = 1.0;
+        const m = o.material; if(!m) return;
+        if ('metalness' in m) m.metalness = 0;
+        if ('roughness' in m) m.roughness = 1;
         if (!m.map && m.color) m.color.set(0xdddddd);
         m.side = THREE.DoubleSide;
       });
 
+      recenterAndGround(model,false);
       frameCameraTo(model);
+      setStatus('Model loaded');
     },
-    (xhr) => {
-      if (xhr.total) console.log(`Loading ${(xhr.loaded/xhr.total*100).toFixed(1)}%`);
+    (xhr)=>{
+      if (xhr.total) setStatus(`Loading ${(xhr.loaded/xhr.total*100).toFixed(1)}%`);
+      else setStatus(`Loading ${(xhr.loaded/1048576).toFixed(1)} MB`);
     },
-    (err) => {
-      console.error('GLB load failed:', err);
-      // fallback cube so page isn’t empty
-      const cube = new THREE.Mesh(
-        new THREE.BoxGeometry(1,1,1),
-        new THREE.MeshStandardMaterial({color:0x2da3ff})
-      );
-      cube.position.y = 0.5;
-      scene.add(cube);
+    (err)=>{
+      console.error('GLB load failed', err);
+      setStatus('GLB load failed — see console');
     }
   );
 
-  function frameCameraTo(object) {
-    const box = new THREE.Box3().setFromObject(object);
-    const size = box.getSize(new THREE.Vector3());
-    const dist = size.length() / (2*Math.tan(THREE.MathUtils.degToRad(camera.fov)/2));
-    camera.position.set(dist, dist*0.5, dist);
-    controls.target.set(0, Math.max(size.y*0.5, 0), 0);
-    controls.update();
-  }
-
-  function recenterAndGround(object, flat=false) {
-    const box = new THREE.Box3().setFromObject(object);
-    const center = box.getCenter(new THREE.Vector3());
-    object.position.sub(center);       // center at origin
-    if (flat) object.rotation.x = -Math.PI/2; // lay on ground plane if needed
-    // recompute after rotation
-    const b2 = new THREE.Box3().setFromObject(object);
-    object.position.y -= b2.min.y;     // sit on ground (y=0)
-  }
-
-  // === DESKTOP LOCOMOTION (WASD) ===
+  // ---------- desktop locomotion ----------
   const keys = new Set();
-  window.addEventListener('keydown', e => keys.add(e.code));
-  window.addEventListener('keyup',   e => keys.delete(e.code));
-
+  addEventListener('keydown', e=>keys.add(e.code));
+  addEventListener('keyup',   e=>keys.delete(e.code));
   function desktopMove(dt){
     const fwd = (keys.has('KeyW')?1:0) - (keys.has('KeyS')?1:0);
     const str = (keys.has('KeyD')?1:0) - (keys.has('KeyA')?1:0);
     if (!fwd && !str) return;
+    const sprint = keys.has('ShiftLeft')||keys.has('ShiftRight');
+    const spd = (sprint?DESKTOP_SPRINT:DESKTOP_SPEED)*dt;
 
-    const sprint = keys.has('ShiftLeft') || keys.has('ShiftRight');
-    const spd = (sprint?DESKTOP_SPRINT:DESKTOP_SPEED) * dt;
-
-    // move in camera’s XZ plane
-    const dir = new THREE.Vector3();
-    camera.getWorldDirection(dir); dir.y = 0; dir.normalize();
+    const dir = new THREE.Vector3(); camera.getWorldDirection(dir); dir.y=0; dir.normalize();
     const right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0,1,0)).multiplyScalar(-1);
-
-    const delta = new THREE.Vector3().addScaledVector(dir, fwd*spd).addScaledVector(right, str*spd);
-    camera.position.add(delta);
-    controls.target.add(delta);
+    const delta = new THREE.Vector3().addScaledVector(dir,fwd*spd).addScaledVector(right,str*spd);
+    camera.position.add(delta); controls.target.add(delta);
   }
-
-  // quick orientation hotkeys
-  window.addEventListener('keydown', (e)=>{
-    if (!model) return;
+  addEventListener('keydown', (e)=>{
+    if(!model) return;
     switch(e.code){
       case 'KeyQ': scene.rotation.y += THREE.MathUtils.degToRad(15); break;
       case 'KeyE': scene.rotation.y -= THREE.MathUtils.degToRad(15); break;
@@ -155,76 +154,84 @@ Orient: Q/E yaw ±15° · Z/X tilt ±15° · G ground · F lay flat</div>
     }
   });
 
-  // === VR SETUP & LOCOMOTION ===
+  // ---------- VR setup ----------
   renderer.xr.enabled = true;
-  document.body.appendChild(VRButton.createButton(renderer));
+  const enterVRBtn = document.getElementById('enterVR');
 
-  // cache last snap turn time to rate-limit
-  let lastSnap = 0;
+  // Create our own button so we can show messages if unsupported
+  async function setupXRButton(){
+    try{
+      if (!('xr' in navigator)) {
+        enterVRBtn.style.display = 'inline-block';
+        enterVRBtn.disabled = true;
+        enterVRBtn.textContent = 'WebXR not available';
+        setStatus('WebXR not available (Safari on macOS needs Experimental WebXR enabled)');
+        return;
+      }
+      const ok = await navigator.xr.isSessionSupported('immersive-vr');
+      if (!ok) {
+        enterVRBtn.style.display = 'inline-block';
+        enterVRBtn.disabled = true;
+        enterVRBtn.textContent = 'VR not supported here';
+        setStatus('immersive-vr not supported in this browser');
+        return;
+      }
+      enterVRBtn.style.display = 'inline-block';
+      enterVRBtn.disabled = false;
+      enterVRBtn.textContent = 'Enter VR';
+      enterVRBtn.onclick = async ()=>{
+        try{
+          await renderer.xr.setSession(await navigator.xr.requestSession('immersive-vr', { requiredFeatures: ['local-floor'] }));
+        }catch(e){ console.warn(e); }
+      };
+      setStatus('Ready (click Enter VR on Quest)');
+    }catch(e){
+      enterVRBtn.style.display = 'inline-block';
+      enterVRBtn.disabled = true;
+      enterVRBtn.textContent = 'VR check failed';
+      setStatus('WebXR capability check failed');
+    }
+  }
+  setupXRButton();
 
-  function vrMove(dt, frame){
-    const session = renderer.xr.getSession();
-    if (!session) return;
-
+  // XR locomotion
+  let lastSnap=0;
+  function vrMove(dt){
+    const session = renderer.xr.getSession(); if(!session) return;
     for (const src of session.inputSources) {
-      if (!src?.gamepad) continue;
-      const gp = src.gamepad;
-      // on Quest: left stick axes[2]=x (left/right), axes[3]=y (up/down). Some runtimes swap.
+      const gp = src.gamepad; if(!gp) continue;
       const ax = gp.axes[2] ?? gp.axes[0] ?? 0;
       const ay = gp.axes[3] ?? gp.axes[1] ?? 0;
 
-      // movement from LEFT stick (source handedness often 'left')
-      if (src.handedness === 'left' || session.inputSources.length === 1) {
-        const speed = VR_SPEED * dt;
-
-        // forward/right in XR camera space
+      if (src.handedness==='left' || session.inputSources.length===1){
         const xrCam = renderer.xr.getCamera(camera);
-        const fwd = new THREE.Vector3();
-        xrCam.getWorldDirection(fwd); fwd.y = 0; fwd.normalize();
+        const fwd = new THREE.Vector3(); xrCam.getWorldDirection(fwd); fwd.y=0; fwd.normalize();
         const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0,1,0)).multiplyScalar(-1);
-
-        const offset = new THREE.Vector3().addScaledVector(fwd, -ay*speed).addScaledVector(right, ax*speed);
-        // move the *scene* opposite to camera move → feels like you walk
-        scene.position.sub(offset);
+        const offset = new THREE.Vector3().addScaledVector(fwd, -ay*VR_SPEED*dt).addScaledVector(right, ax*VR_SPEED*dt);
+        scene.position.sub(offset); // world moves opposite → you move forward
       }
-
-      // snap turn from RIGHT stick x
-      if (src.handedness === 'right') {
-        const snapX = ax; // using same ax mapping
+      if (src.handedness==='right'){
         const now = performance.now();
-        if (Math.abs(snapX) > 0.75 && (now - lastSnap) > 250) {
-          const angle = THREE.MathUtils.degToRad(snapX > 0 ? -SNAP_DEG : SNAP_DEG);
-          scene.rotation.y += angle;
+        if (Math.abs(ax)>0.75 && (now-lastSnap)>250){
+          scene.rotation.y += THREE.MathUtils.degToRad(ax>0 ? -SNAP_DEG : SNAP_DEG);
           lastSnap = now;
         }
       }
     }
   }
 
-  // disable orbit while in XR (it fights head pose)
-  renderer.xr.addEventListener('sessionstart', ()=>{ controls.enabled = false; });
-  renderer.xr.addEventListener('sessionend',   ()=>{ controls.enabled = true; });
+  renderer.xr.addEventListener('sessionstart', ()=>{ controls.enabled = false; setStatus('In VR'); });
+  renderer.xr.addEventListener('sessionend',   ()=>{ controls.enabled = true;  setStatus('VR ended'); });
 
-  // === RENDER LOOP ===
+  // ---------- loop / resize ----------
   let lastT = performance.now();
   renderer.setAnimationLoop(()=>{
-    const t = performance.now();
-    const dt = Math.min((t - lastT)/1000, 0.1);
-    lastT = t;
-
-    if (renderer.xr.isPresenting) {
-      vrMove(dt);
-    } else {
-      desktopMove(dt);
-      controls.update();
-    }
+    const t = performance.now(); const dt = Math.min((t-lastT)/1000, .1); lastT = t;
+    if (renderer.xr.isPresenting) vrMove(dt); else { desktopMove(dt); controls.update(); }
     renderer.render(scene, camera);
   });
-
-  // resize
   addEventListener('resize', ()=>{
-    camera.aspect = innerWidth/innerHeight;
-    camera.updateProjectionMatrix();
+    camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight);
   });
   </script>
