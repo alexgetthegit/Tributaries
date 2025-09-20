@@ -1,62 +1,116 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <title>Drone Mesh Viewer (VR)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>WebXR • Toggle Handmade ↔ GLB + VR Locomotion</title>
   <style>
-    html, body { margin:0; height:100%; background:#000; color:#fff; }
-    #hud {
-      position:fixed; top:8px; left:8px; background:rgba(0,0,0,.5);
-      padding:6px 10px; border-radius:8px; font:12px system-ui, sans-serif; line-height:1.35;
+    html, body { margin:0; height:100%; overflow:hidden; background:#111; }
+    #info {
+      position: absolute; top: 12px; left: 12px; z-index: 10;
+      color: #fff; font: 14px/1.4 system-ui, -apple-system, sans-serif;
+      background: rgba(0,0,0,0.4); padding: 10px 12px; border-radius: 10px;
     }
-    #hint {
-      position:fixed; inset:auto 0 16px 0; display:flex; justify-content:center;
-      font-family:system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-      pointer-events:none;
-    }
-    #hint .bubble {
-      pointer-events:auto; background:rgba(0,0,0,.55); color:#fff;
-      padding:10px 14px; border-radius:10px; box-shadow:0 6px 18px rgba(0,0,0,.25);
-      font-size:14px
-    }
-    #hint .bubble button { margin-left:10px; padding:6px 10px; border:0; border-radius:8px; cursor:pointer }
-    .hidden { display:none; }
+    #info a { color: #9ad; text-decoration: none; }
   </style>
 </head>
 <body>
-  <div id="hud">
-    <div><b>Mode:</b> <span id="modeLabel">loading…</span> · Switch: <b>1</b>=Handmade, <b>2</b>=GLB</div>
-    <div>Handmade: Texture pan <b>J/L</b> yaw, <b>I/K</b> tilt · Desktop: <b>W/A/S/D</b> + mouse look</div>
-    <div>VR: Left stick = move, Right stick = snap turn</div>
+  <div id="info">
+    <strong>Controls:</strong> drag = orbit · wheel/pinch = zoom · right-drag = pan<br>
+    <strong>VR:</strong> click the “Enter VR” button to step into your scene
   </div>
-
-  <!-- Hidden 360° sky video (used by handmade mode) -->
-  <video id="pano" playsinline muted loop preload="metadata"
-         crossorigin="anonymous" style="display:none"></video>
-
-  <div id="hint">
-    <div class="bubble">
-      Click “Enable Mouse Look”, then use <b>W/A/S/D</b> (or arrows) to move · Press <b>Esc</b> to release
-      <button id="lockBtn">Enable Mouse Look</button>
-    </div>
-  </div>
-
-  <!-- Import map -->
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-    }
-  }
-  </script>
+  <canvas id="c"></canvas>
 
   <script type="module">
-    import * as THREE from 'three';
-    import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
-    import { XRButton } from 'three/addons/webxr/XRButton.js';
-    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+    import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+    import { GLTFLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
+    import { DRACOLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/DRACOLoader.js';
+    import { VRButton } from 'https://unpkg.com/three@0.160.0/examples/jsm/webxr/VRButton.js';
 
-    // ===== Config =====
-    const DEFAULT_MODE = 'handmade';          // 'hand
+    // ✅ Your updated Cloudflare R2 file
+    const GLB_URL = 'https://pub-8cbedf6f909d4e39a938e2cee5080e7a.r2.dev/drone_scene_2025-09-19_metashape250_decimated.glb';
+    const canvas = document.getElementById('c');
+
+    // ======= Renderer =======
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+    renderer.xr.enabled = true;
+    document.body.appendChild(VRButton.createButton(renderer));
+
+    // ======= Scene & Camera =======
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x111111);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 5000);
+    camera.position.set(2.5, 1.5, 2.5);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.target.set(0, 0.5, 0);
+
+    // ======= Lights =======
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const dir = new THREE.DirectionalLight(0xffffff, 1.0);
+    dir.position.set(5, 10, 5);
+    scene.add(dir);
+
+    // ======= Load GLB =======
+    const loader = new GLTFLoader();
+    const draco = new DRACOLoader();
+    draco.setDecoderPath('https://unpkg.com/three@0.160.0/examples/jsm/libs/draco/');
+    loader.setDRACOLoader(draco);
+    loader.setCrossOrigin('anonymous');
+
+    loader.load(
+      GLB_URL,
+      (gltf) => {
+        const model = gltf.scene;
+        scene.add(model);
+
+        // Center & sit on ground
+        const box = new THREE.Box3().setFromObject(model);
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+
+        // Re-center
+        model.position.sub(center);
+
+        // Sit on ground (Y=0)
+        const minY = box.min.y - center.y;
+        model.position.y -= minY;
+
+        // Frame camera nicely
+        const fitDist = size.length() / (2 * Math.tan((camera.fov * Math.PI) / 360));
+        camera.position.copy(center).add(new THREE.Vector3(fitDist * 0.8, fitDist * 0.5, fitDist * 0.8));
+        controls.target.set(0, size.y * 0.5, 0);
+        controls.update();
+      },
+      (xhr) => {
+        console.log(`Loading... ${((xhr.loaded / xhr.total) * 100).toFixed(1)}%`);
+      },
+      (err) => {
+        console.error('GLB load error:', err);
+        document.getElementById('info').innerHTML += `<br><span style="color:#f88">Load error — check URL & CORS</span>`;
+      }
+    );
+
+    // ======= Resize =======
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // ======= Render Loop =======
+    renderer.setAnimationLoop(() => {
+      controls.update();
+      renderer.render(scene, camera);
+    });
+  </script>
+</body>
+</html>
