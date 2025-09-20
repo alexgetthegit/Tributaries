@@ -47,19 +47,17 @@
     scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 0.9));
     const dir = new THREE.DirectionalLight(0xffffff, 1.2);
     dir.position.set(20, 40, 10);
-    dir.castShadow = false;
     scene.add(dir);
 
-    // Ground (for spatial reference in VR)
+    // Ground plane
     const ground = new THREE.Mesh(
       new THREE.CircleGeometry(2000, 64).rotateX(-Math.PI/2),
-      new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 1.0, metalness: 0.0 })
+      new THREE.MeshStandardMaterial({ color: 0x222222 })
     );
-    ground.receiveShadow = false;
     scene.add(ground);
 
-    // Player rig for VR locomotion
-    const dolly = new THREE.Group();     // we move this
+    // Player rig
+    const dolly = new THREE.Group();
     const cameraHolder = new THREE.Group();
     cameraHolder.add(camera);
     dolly.add(cameraHolder);
@@ -67,105 +65,42 @@
 
     // Load GLB
     const loader = new GLTFLoader();
-
-    // (Optional, but helpful) See headers in console to confirm CORS/MIME
-    fetch(GLB_URL, { method:'HEAD' })
-      .then(r => console.log('[HEAD]', r.status, Object.fromEntries(r.headers)))
-      .catch(e => console.warn('[HEAD error]', e));
-
     loader.load(
       GLB_URL,
       (gltf) => {
         console.log('✅ GLB loaded');
-        const model = gltf.scene || gltf.scenes[0];
+        const model = gltf.scene;
         scene.add(model);
 
-        // Center & ground the model
+        // Center & ground
         const box = new THREE.Box3().setFromObject(model);
         const center = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3());
         model.position.sub(center);
         model.position.y -= box.min.y;
 
-        // Camera frame (desktop start pos)
+        // Frame camera
         const dist = size.length() / (2*Math.tan(THREE.MathUtils.degToRad(camera.fov)/2));
         camera.position.set(dist, dist*0.5, dist);
-        controls.target.set(0, Math.max(size.y*0.5, 0), 0);
+        controls.target.set(0, size.y*0.5, 0);
         controls.update();
 
-        // Place VR rig just outside the bounds
-        dolly.position.set(dist * 0.6, 0, dist * 0.6);
+        dolly.position.set(dist*0.6, 0, dist*0.6);
       },
-      (xhr) => {
-        if (xhr.total) console.log(`Loading ${(xhr.loaded/xhr.total*100).toFixed(1)}%`);
-        else console.log(`Loaded ${(xhr.loaded/1024/1024).toFixed(1)} MB`);
-      },
-      (err) => {
-        console.error('❌ GLB load failed', err);
-        const cube = new THREE.Mesh(new THREE.BoxGeometry(1,1,1),
-          new THREE.MeshStandardMaterial({ color: 0x33aaff }));
-        cube.position.y = 0.5;
-        scene.add(cube);
-      }
+      undefined,
+      (err) => console.error('❌ GLB load failed', err)
     );
-
-    // --- VR locomotion (simple) ---
-    let yaw = 0;                 // accumulated yaw from right stick
-    const moveSpeed = 2.0;       // meters per second
-    const turnSpeed = 1.5;       // radians per second (max turn rate)
-
-    function handleXRGamepads(dt) {
-      const session = renderer.xr.getSession();
-      if (!session) return;
-
-      // Read all input sources; collect joystick axes if present
-      for (const source of session.inputSources) {
-        const gp = source.gamepad;
-        if (!gp || !gp.axes) continue;
-
-        // Convention: left stick = axes[0] (x), axes[1] (y); right stick = axes[2] (x), axes[3] (y)
-        const [lx=0, ly=0, rx=0, ry=0] = gp.axes;
-
-        // Smooth-locomotion
-        // Move relative to headset forward direction (projected on XZ plane)
-        const headset = renderer.xr.getCamera(camera);
-        const fwd = new THREE.Vector3();
-        headset.getWorldDirection(fwd);
-        fwd.y = 0; fwd.normalize();
-
-        const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0,1,0)).negate();
-
-        // Left stick: strafe (lx) and move forward/back (ly)
-        const move = fwd.multiplyScalar(-ly * moveSpeed * dt).add(right.multiplyScalar(lx * moveSpeed * dt));
-        dolly.position.add(move);
-
-        // Right stick X: turn (yaw)
-        yaw += rx * turnSpeed * dt;
-        dolly.rotation.y = yaw;
-      }
-    }
 
     // Animation loop
     const clock = new THREE.Clock();
     renderer.setAnimationLoop(() => {
       const dt = clock.getDelta();
-
-      if (renderer.xr.isPresenting) {
-        // In VR: update locomotion and render from XR camera
-        handleXRGamepads(dt);
-      } else {
-        // Desktop: OrbitControls
-        controls.update();
-      }
-
-      // Keep cameraHolder aligned with dolly rotation/position (XR updates camera pose internally)
-      cameraHolder.position.set(0, 0, 0);
+      if (!renderer.xr.isPresenting) controls.update();
       renderer.render(scene, camera);
     });
 
-    // Resize
     addEventListener('resize', () => {
-      camera.aspect = innerWidth / innerHeight;
+      camera.aspect = innerWidth/innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(innerWidth, innerHeight);
     });
