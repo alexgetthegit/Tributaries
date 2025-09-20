@@ -1,215 +1,54 @@
 <!doctype html>
-<html lang="en">
+<html>
 <head>
   <meta charset="utf-8" />
-  <title>Drone Mesh Viewer — Preview First</title>
+  <title>Hello Cube</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    html, body { margin:0; height:100%; overflow:hidden; background:#111; }
-    #ui {
-      position:absolute; top:12px; left:12px; z-index:10; display:flex; gap:8px; align-items:center; flex-wrap:wrap;
-      color:#fff; font:14px/1.4 system-ui,-apple-system,sans-serif; background:rgba(0,0,0,.45);
-      padding:10px 12px; border-radius:10px;
-    }
-    #progress {
-      position:absolute; top:12px; right:12px; z-index:10; color:#fff;
-      font:13px system-ui,-apple-system,sans-serif; background:rgba(0,0,0,.45);
-      padding:8px 10px; border-radius:10px; display:none;
-    }
-    select, button, label { background:#1c1c1c; color:#fff; border:1px solid #333; border-radius:8px; padding:6px 8px; }
-    button { cursor:pointer; }
-    label { display:inline-flex; align-items:center; gap:6px; }
-    #hint { opacity:.8; border:none; background:transparent; padding:0; }
-  </style>
+  <style>html,body{margin:0;height:100%;overflow:hidden;background:#111}</style>
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
 </head>
 <body>
-  <div id="ui">
-    <label for="world"><strong>World:</strong></label>
-    <select id="world">
-      <!-- Make sure this filename matches your upload exactly -->
-      <option value="drone_scene_2025-09-19_metashape250_decimated.glb" selected>Decimated (250)</option>
-    </select>
-    <button id="reset">Reset view</button>
-    <label><input type="checkbox" id="autorotate"> Auto-rotate</label>
-    <label><input type="checkbox" id="showCube" checked> Show test cube</label>
-    <span id="hint">drag=orbit · wheel=zoom · right-drag=pan</span>
-  </div>
+<canvas id="c"></canvas>
+<script>
+  const canvas = document.getElementById('c');
+  const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-  <div id="progress">Loading… 0%</div>
-  <canvas id="c"></canvas>
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x111111);
 
-  <script type="module">
-    import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-    import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
-    import { GLTFLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
-    import { VRButton } from 'https://unpkg.com/three@0.160.0/examples/jsm/webxr/VRButton.js';
+  const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.01, 1000);
+  camera.position.set(3,2,3);
 
-    // ✅ Your R2 bucket base URL
-    const BASE_URL = 'https://pub-8cbedf6f909d4e39a938e2cee5080e7a.r2.dev/';
+  const amb = new THREE.AmbientLight(0xffffff, 0.6);
+  const dir = new THREE.DirectionalLight(0xffffff, 1.0);
+  dir.position.set(5,10,5);
+  scene.add(amb, dir);
 
-    // Renderer (preview-first: VR is available but optional)
-    const canvas = document.getElementById('c');
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  const grid = new THREE.GridHelper(20, 20, 0x444444, 0x222222);
+  scene.add(grid);
+
+  const cube = new THREE.Mesh(
+    new THREE.BoxGeometry(1,1,1),
+    new THREE.MeshStandardMaterial({color:0x3366ff})
+  );
+  cube.position.y = 0.5; // sit on grid
+  scene.add(cube);
+
+  function onResize(){
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.xr.enabled = true; // VR available but you don't need to click it
-    document.body.appendChild(VRButton.createButton(renderer));
+  }
+  window.addEventListener('resize', onResize);
 
-    // Scene, camera, controls
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x111111);
-
-    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 10000);
-    camera.position.set(6, 4, 6);
-
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.target.set(0, 0, 0);
-
-    // Lighting
-    scene.add(new THREE.AmbientLight(0xffffff, 0.65));
-    const dir = new THREE.DirectionalLight(0xffffff, 1.0);
-    dir.position.set(10, 20, 10);
-    scene.add(dir);
-
-    // Always-visible references
-    const grid = new THREE.GridHelper(100, 100, 0x444444, 0x222222);
-    scene.add(grid);
-    const axes = new THREE.AxesHelper(1.5); // X=red, Y=green (up), Z=blue
-    scene.add(axes);
-
-    // Test cube (so page is never “just black”)
-    const cube = new THREE.Mesh(
-      new THREE.BoxGeometry(1,1,1),
-      new THREE.MeshStandardMaterial({ color: 0x3366ff, roughness:0.8, metalness:0.1 })
-    );
-    cube.position.set(0.5, 0.5, 0.5); // sit on ground
-    scene.add(cube);
-
-    // Loader
-    const loader = new GLTFLoader();
-    loader.setCrossOrigin('anonymous');
-
-    const worldSelect = document.getElementById('world');
-    const progressEl = document.getElementById('progress');
-    const autoEl = document.getElementById('autorotate');
-    const resetBtn = document.getElementById('reset');
-    const cubeToggle = document.getElementById('showCube');
-
-    let currentRoot = null;
-    let lastLoadedURL = '';
-
-    function centerAndGround(object) {
-      const box = new THREE.Box3().setFromObject(object);
-      const center = box.getCenter(new THREE.Vector3());
-      const size = box.getSize(new THREE.Vector3());
-
-      // Re-center at origin
-      object.position.sub(center);
-
-      // Put on ground (Y=0)
-      const minY = box.min.y - center.y;
-      object.position.y -= minY;
-
-      // Frame camera to fit
-      const dist = size.length() / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
-      camera.position.set(dist * 0.8, dist * 0.5, dist * 0.8);
-      controls.target.set(0, Math.max(size.y * 0.5, 0), 0);
-      controls.update();
-    }
-
-    function clearCurrent() {
-      if (currentRoot) {
-        scene.remove(currentRoot);
-        currentRoot.traverse((o) => {
-          if (o.geometry) o.geometry.dispose?.();
-          if (o.material) {
-            if (Array.isArray(o.material)) o.material.forEach(m => m.dispose?.());
-            else o.material.dispose?.();
-          }
-          if (o.texture) o.texture.dispose?.();
-        });
-        currentRoot = null;
-      }
-    }
-
-    function loadWorld(filename) {
-      clearCurrent();
-      const url = BASE_URL + filename;
-      lastLoadedURL = url;
-      progressEl.style.display = 'block';
-      progressEl.textContent = 'Loading… 0%';
-      console.log('[GLB] Loading:', url);
-
-      loader.load(
-        url,
-        (gltf) => {
-          console.log('[GLB] Loaded OK:', url);
-          progressEl.style.display = 'none';
-
-          // Keep cube visible by default (toggle controls it)
-          currentRoot = gltf.scene || gltf.scenes[0];
-          scene.add(currentRoot);
-
-          // If it comes in tilted (rare with glTF), you can force:
-          // currentRoot.rotation.x = -Math.PI / 2;
-
-          centerAndGround(currentRoot);
-        },
-        (xhr) => {
-          if (xhr.total) {
-            const pct = ((xhr.loaded / xhr.total) * 100).toFixed(1);
-            progressEl.textContent = `Loading… ${pct}%`;
-          } else {
-            progressEl.textContent = `Loading… ${(xhr.loaded/1024/1024).toFixed(1)} MB`;
-          }
-        },
-        (err) => {
-          console.error('[GLB] Load error:', err);
-          progressEl.textContent = 'Load error — open console';
-        }
-      );
-    }
-
-    // UI actions
-    resetBtn.addEventListener('click', () => {
-      if (currentRoot) centerAndGround(currentRoot);
-      else {
-        camera.position.set(6,4,6);
-        controls.target.set(0,0,0);
-        controls.update();
-      }
-    });
-
-    autoEl.addEventListener('change', () => {
-      controls.autoRotate = autoEl.checked;
-      controls.autoRotateSpeed = 1.0; // adjust taste
-    });
-
-    cubeToggle.addEventListener('change', () => {
-      cube.visible = cubeToggle.checked;
-    });
-
-    worldSelect.addEventListener('change', () => loadWorld(worldSelect.value));
-
-    // Initial state
-    controls.autoRotate = false;
-    cube.visible = true;
-    loadWorld(worldSelect.value);
-
-    // Resize & render
-    window.addEventListener('resize', () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    });
-
-    renderer.setAnimationLoop(() => {
-      controls.update();
-      renderer.render(scene, camera);
-    });
-  </script>
+  (function loop(){
+    cube.rotation.y += 0.01;
+    renderer.render(scene, camera);
+    requestAnimationFrame(loop);
+  })();
+</script>
 </body>
 </html>
