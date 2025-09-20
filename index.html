@@ -2,31 +2,29 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Drone Mesh Viewer (VR) — World Switch</title>
+  <title>Drone Mesh Viewer (VR) — Debug</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     html, body { margin:0; height:100%; overflow:hidden; background:#111; }
     #ui {
-      position: absolute; top: 12px; left: 12px; z-index: 10;
-      color: #fff; font: 14px/1.4 system-ui, -apple-system, sans-serif;
-      background: rgba(0,0,0,0.45); padding: 10px 12px; border-radius: 10px;
-      display:flex; gap:8px; align-items:center;
+      position:absolute; top:12px; left:12px; z-index:10; display:flex; gap:8px; align-items:center;
+      color:#fff; font:14px/1.4 system-ui,-apple-system,sans-serif; background:rgba(0,0,0,.45);
+      padding:10px 12px; border-radius:10px;
     }
     #progress {
-      position: absolute; top: 12px; right: 12px; z-index: 10;
-      color: #fff; font: 13px system-ui, -apple-system, sans-serif;
-      background: rgba(0,0,0,0.45); padding: 8px 10px; border-radius: 10px;
-      display:none;
+      position:absolute; top:12px; right:12px; z-index:10; color:#fff;
+      font:13px system-ui,-apple-system,sans-serif; background:rgba(0,0,0,.45);
+      padding:8px 10px; border-radius:10px; display:none;
     }
     select { background:#1c1c1c; color:#fff; border:1px solid #333; border-radius:8px; padding:6px 8px; }
-    #status { opacity:0.8 }
+    #status { opacity:.8 }
   </style>
 </head>
 <body>
   <div id="ui">
     <label for="worldSelect"><strong>World:</strong></label>
     <select id="worldSelect">
-      <!-- Add more <option> items later as you upload more GLBs -->
+      <!-- 🔁 Ensure this matches your actual uploaded filename exactly -->
       <option value="drone_scene_2025-09-19_metashape250_decimated.glb" selected>Decimated (250)</option>
     </select>
     <span id="status">drag = orbit · wheel = zoom · right-drag = pan</span>
@@ -45,12 +43,11 @@
 
     // ===== Renderer =====
     const canvas = document.getElementById('c');
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.0;
     renderer.xr.enabled = true;
     document.body.appendChild(VRButton.createButton(renderer));
 
@@ -58,23 +55,32 @@
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x111111);
 
-    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 5000);
-    camera.position.set(3, 2, 3);
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 10000);
+    camera.position.set(6, 4, 6);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    controls.target.set(0, 0.5, 0);
+    controls.target.set(0, 0, 0);
 
-    // Lights
+    // Lights (grid/cube don't need lights but model might)
     scene.add(new THREE.AmbientLight(0xffffff, 0.6));
     const dir = new THREE.DirectionalLight(0xffffff, 1.0);
-    dir.position.set(5, 10, 5);
+    dir.position.set(10, 20, 10);
     scene.add(dir);
 
-    // Optional ground/grid reference
-    const grid = new THREE.GridHelper(50, 50, 0x444444, 0x222222);
-    grid.position.y = 0;
+    // ===== Fallback helpers (so the screen is never black) =====
+    const grid = new THREE.GridHelper(100, 100, 0x444444, 0x222222);
     scene.add(grid);
+    const axes = new THREE.AxesHelper(1.5); // X=red, Y=green (up), Z=blue
+    scene.add(axes);
+
+    // Fallback cube at origin
+    const cube = new THREE.Mesh(
+      new THREE.BoxGeometry(1,1,1),
+      new THREE.MeshStandardMaterial({ color: 0x3366ff, roughness:0.8, metalness:0.1 })
+    );
+    cube.position.set(0.5, 0.5, 0.5); // sit on ground
+    scene.add(cube);
 
     // ===== Loader =====
     const loader = new GLTFLoader();
@@ -82,7 +88,6 @@
 
     const progressEl = document.getElementById('progress');
     const worldSelect = document.getElementById('worldSelect');
-
     let currentRoot = null;
 
     function centerAndGround(object) {
@@ -91,29 +96,30 @@
       const center = box.getCenter(new THREE.Vector3());
       const size = box.getSize(new THREE.Vector3());
 
-      // Center at origin
+      // Re-center at origin
       object.position.sub(center);
 
-      // Sit on ground (Y = 0)
+      // Put on ground (Y=0)
       const minY = box.min.y - center.y;
       object.position.y -= minY;
 
-      // Frame camera
-      const fit = size.length() / (2 * Math.tan((camera.fov * Math.PI) / 360));
-      camera.position.set(fit * 0.8, fit * 0.5, fit * 0.8);
-      controls.target.set(0, size.y * 0.5, 0);
+      // Frame camera to fit
+      const dist = size.length() / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
+      camera.position.set(dist * 0.8, dist * 0.5, dist * 0.8);
+      controls.target.set(0, Math.max(size.y * 0.5, 0), 0);
       controls.update();
     }
 
     function clearCurrent() {
       if (currentRoot) {
         scene.remove(currentRoot);
-        currentRoot.traverse((obj) => {
-          if (obj.geometry) obj.geometry.dispose?.();
-          if (obj.material) {
-            if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose?.());
-            else obj.material.dispose?.();
+        currentRoot.traverse(o => {
+          if (o.geometry) o.geometry.dispose?.();
+          if (o.material) {
+            if (Array.isArray(o.material)) o.material.forEach(m => m.dispose?.());
+            else o.material.dispose?.();
           }
+          if (o.texture) o.texture.dispose?.();
         });
         currentRoot = null;
       }
@@ -123,28 +129,38 @@
       clearCurrent();
       progressEl.style.display = 'block';
       progressEl.textContent = 'Loading… 0%';
-
       const url = BASE_URL + filename;
+      console.log('[GLB] Loading:', url);
 
       loader.load(
         url,
         (gltf) => {
+          console.log('[GLB] Loaded OK:', url);
           progressEl.style.display = 'none';
+
+          // Remove fallback cube once model loads
+          if (cube.parent) scene.remove(cube);
+
           currentRoot = gltf.scene || gltf.scenes[0];
           scene.add(currentRoot);
+
+          // If model came in tilted (Z-up), uncomment:
+          // currentRoot.rotation.x = -Math.PI / 2;
+
           centerAndGround(currentRoot);
         },
         (xhr) => {
+          // Progress (may not have total size if server doesn't send it)
           if (xhr.total) {
             const pct = ((xhr.loaded / xhr.total) * 100).toFixed(1);
             progressEl.textContent = `Loading… ${pct}%`;
           } else {
-            progressEl.textContent = 'Loading…';
+            progressEl.textContent = `Loading… ${(xhr.loaded/1024/1024).toFixed(1)} MB`;
           }
         },
         (err) => {
-          console.error('GLB load error:', err);
-          progressEl.textContent = 'Load error — check URL & CORS';
+          console.error('[GLB] Load error:', err);
+          progressEl.textContent = 'Load error — open DevTools console';
         }
       );
     }
@@ -152,10 +168,8 @@
     // Initial load
     loadWorld(worldSelect.value);
 
-    // Switch worlds at runtime
-    worldSelect.addEventListener('change', () => {
-      loadWorld(worldSelect.value);
-    });
+    // Switch worlds
+    worldSelect.addEventListener('change', () => loadWorld(worldSelect.value));
 
     // Resize
     window.addEventListener('resize', () => {
