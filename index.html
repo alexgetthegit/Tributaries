@@ -8,60 +8,61 @@
     html,body{margin:0;height:100%;overflow:hidden;background:#111}
     #hud{position:fixed;left:12px;top:12px;background:rgba(0,0,0,.6);color:#fff;
          padding:6px 10px;border-radius:8px;font:12px/1.4 system-ui}
-    button{font:12px system-ui}
   </style>
+
+  <!-- Import map makes "three" and "three/addons/*" resolvable URLs -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
 </head>
 <body>
   <div id="hud">drag=orbit • wheel=zoom • right-drag=pan</div>
 
   <script type="module">
-    import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-    import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
-    import { GLTFLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
-    import { VRButton } from 'https://unpkg.com/three@0.160.0/examples/jsm/webxr/VRButton.js';
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { VRButton } from 'three/addons/webxr/VRButton.js';
 
-    // 🔗 Your R2 Worker URL
+    // Your Worker URL (R2 proxy)
     const GLB_URL = 'https://r2-public.alexpurcellmusic.workers.dev/drone_scene_big.glb';
 
-    // --- renderer / scene / camera ---
+    // Renderer / XR
     const renderer = new THREE.WebGLRenderer({ antialias:true });
     renderer.setSize(innerWidth, innerHeight);
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.xr.enabled = true; // WebXR
+    renderer.xr.enabled = true;
     document.body.appendChild(renderer.domElement);
     document.body.appendChild(VRButton.createButton(renderer));
 
+    // Scene / camera / controls
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x111111);
 
     const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.05, 20000);
     camera.position.set(6,4,6);
-
-    // Desktop controls
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
 
     // Lights
     scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 0.9));
     const dir = new THREE.DirectionalLight(0xffffff, 1.2);
-    dir.position.set(20, 40, 10);
+    dir.position.set(20,40,10);
     scene.add(dir);
 
-    // Ground plane
+    // Simple ground so you always see *something*
     const ground = new THREE.Mesh(
       new THREE.CircleGeometry(2000, 64).rotateX(-Math.PI/2),
       new THREE.MeshStandardMaterial({ color: 0x222222 })
     );
     scene.add(ground);
-
-    // Player rig
-    const dolly = new THREE.Group();
-    const cameraHolder = new THREE.Group();
-    cameraHolder.add(camera);
-    dolly.add(cameraHolder);
-    scene.add(dolly);
 
     // Load GLB
     const loader = new GLTFLoader();
@@ -72,29 +73,39 @@
         const model = gltf.scene;
         scene.add(model);
 
-        // Center & ground
+        // center & ground
         const box = new THREE.Box3().setFromObject(model);
         const center = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3());
         model.position.sub(center);
         model.position.y -= box.min.y;
 
-        // Frame camera
+        // frame camera
         const dist = size.length() / (2*Math.tan(THREE.MathUtils.degToRad(camera.fov)/2));
         camera.position.set(dist, dist*0.5, dist);
         controls.target.set(0, size.y*0.5, 0);
         controls.update();
 
-        dolly.position.set(dist*0.6, 0, dist*0.6);
+        // safety: avoid black materials
+        model.traverse(o=>{
+          if(!o.isMesh) return;
+          if (o.geometry && !o.geometry.attributes.normal) o.geometry.computeVertexNormals();
+          const m = o.material; if(!m) return;
+          if ('metalness' in m) m.metalness = 0;
+          if ('roughness' in m) m.roughness = 1;
+          if (!m.map && m.color) m.color.set(0xffffff);
+          m.side = THREE.DoubleSide; m.needsUpdate = true;
+        });
       },
-      undefined,
+      (xhr) => {
+        if (xhr.total) console.log(`Loading… ${(xhr.loaded/xhr.total*100).toFixed(1)}%`);
+      },
       (err) => console.error('❌ GLB load failed', err)
     );
 
-    // Animation loop
+    // Loop / resize
     const clock = new THREE.Clock();
     renderer.setAnimationLoop(() => {
-      const dt = clock.getDelta();
       if (!renderer.xr.isPresenting) controls.update();
       renderer.render(scene, camera);
     });
