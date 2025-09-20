@@ -6,21 +6,28 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     html,body{margin:0;height:100%;overflow:hidden;background:#111}
+    #ui{position:fixed;left:12px;top:12px;z-index:10;font:13px system-ui}
+    #ui > *{margin-right:6px}
     #msg{position:fixed;left:12px;bottom:12px;background:rgba(0,0,0,.75);color:#fff;
-         padding:8px 10px;border-radius:8px;font:13px/1.4 system-ui;display:none}
+         padding:8px 10px;border-radius:8px;font:13px/1.4 system-ui;display:none;max-width:60ch}
   </style>
 </head>
 <body>
+  <div id="ui">
+    <button id="loadR2">Load R2 model</button>
+    <button id="loadSample">Load sample</button>
+    <button id="reset">Reset view</button>
+  </div>
   <div id="msg"></div>
 
   <script type="module">
     import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
     import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
     import { GLTFLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
-    // If you later use meshopt compression, also add:
-    // import { MeshoptDecoder } from 'https://unpkg.com/meshoptimizer@0.20.0/meshopt_decoder.module.js';
+    // If you later use meshopt compression, add MeshoptDecoder and set it on the loader.
 
-    const GLB_URL = 'https://vr-media.213530cb73b35d04a603ed81bb497175.r2.dev/drone_scene_big.glb'; // ✅ public URL
+    const URL_R2 = 'https://vr-media.213530cb73b35d04a603ed81bb497175.r2.dev/drone_scene_big.glb';
+    const URL_SAMPLE = 'https://modelviewer.dev/shared-assets/models/Astronaut.glb';
 
     // renderer
     const renderer = new THREE.WebGLRenderer({ antialias:true });
@@ -42,81 +49,101 @@
     scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.0));
     const dir = new THREE.DirectionalLight(0xffffff, 1.25); dir.position.set(10,20,10); scene.add(dir);
 
-    // helpers (uncomment to debug)
-    // scene.add(new THREE.GridHelper(200,200,0x444444,0x222222));
-    // scene.add(new THREE.AxesHelper(2));
+    // always-visible test cube so the page never looks empty
+    const cube = new THREE.Mesh(
+      new THREE.BoxGeometry(1,1,1),
+      new THREE.MeshStandardMaterial({ color: 0x33aaff })
+    );
+    cube.position.y = 0.5;
+    scene.add(cube);
 
     const msg = document.getElementById('msg');
-    const showMsg = t => { msg.textContent = t; msg.style.display = 'block'; };
-    const hideMsg = () => { msg.style.display = 'none'; };
+    const showMsg = (t)=>{ msg.textContent = t; msg.style.display = 'block'; };
+    const hideMsg = ()=>{ msg.style.display = 'none'; };
 
-    // loader
     const loader = new GLTFLoader();
-    // If using meshopt-compressed GLB in future:
-    // loader.setMeshoptDecoder(MeshoptDecoder);
 
-    // quick HEAD so you can see headers in console
-    fetch(GLB_URL, { method:'HEAD' })
-      .then(r => console.log('[HEAD]', r.status, Object.fromEntries(r.headers)))
-      .catch(e => console.warn('[HEAD error]', e));
+    function centerAndFrame(object){
+      const box = new THREE.Box3().setFromObject(object);
+      const c = box.getCenter(new THREE.Vector3());
+      const s = box.getSize(new THREE.Vector3());
+      object.position.sub(c);
+      object.position.y -= box.min.y;
+      const dist = s.length() / (2*Math.tan(THREE.MathUtils.degToRad(camera.fov)/2));
+      camera.position.set(dist, dist*0.5, dist);
+      controls.target.set(0, Math.max(s.y*0.5, 0), 0);
+      controls.update();
+    }
 
-    loader.load(
-      GLB_URL,
-      (gltf) => {
-        hideMsg();
-        console.log('✅ Loaded GLB');
-        const model = gltf.scene || gltf.scenes[0];
-        scene.add(model);
-
-        // center & ground
-        const box = new THREE.Box3().setFromObject(model);
-        const center = box.getCenter(new THREE.Vector3());
-        const size = box.getSize(new THREE.Vector3());
-        model.position.sub(center);
-        model.position.y -= box.min.y;
-
-        // camera frame
-        const dist = size.length() / (2*Math.tan(THREE.MathUtils.degToRad(camera.fov)/2));
-        camera.position.set(dist, dist*0.5, dist);
-        controls.target.set(0, Math.max(size.y*0.5, 0), 0);
-        controls.update();
-
-        // material safety so it never looks black
-        model.traverse(o=>{
-          if(!o.isMesh) return;
-          if (o.geometry && !o.geometry.attributes.normal) o.geometry.computeVertexNormals();
-          const m = o.material; if(!m) return;
-          if ('metalness' in m) m.metalness = 0.0;
-          if ('roughness' in m) m.roughness = 1.0;
-          if (!m.map && m.color) m.color.set(0xffffff);
-          m.side = THREE.DoubleSide;
-          m.needsUpdate = true;
-        });
-      },
-      (xhr) => {
-        if (xhr.total) showMsg(`Loading… ${((xhr.loaded/xhr.total)*100).toFixed(1)}%`);
-        else showMsg(`Loading… ${(xhr.loaded/1024/1024).toFixed(1)} MB`);
-      },
-      (err) => {
-        console.error('❌ GLB load failed', err);
-        showMsg('GLB load failed — see console (Network tab) for details');
-        // fallback cube so the page never looks empty
-        const cube = new THREE.Mesh(
-          new THREE.BoxGeometry(1,1,1),
-          new THREE.MeshStandardMaterial({ color: 0x33aaff })
-        );
-        cube.position.y = 0.5;
-        scene.add(cube);
+    async function head(url){
+      try{
+        const r = await fetch(url, { method:'HEAD' });
+        console.log('[HEAD]', url, r.status, Object.fromEntries(r.headers));
+        showMsg(`HEAD ${r.status} — ${url}`);
+        return r.ok;
+      }catch(e){
+        console.warn('[HEAD error]', e);
+        showMsg(`HEAD error — ${e}`);
+        return false;
       }
-    );
+    }
 
-    // loop & resize
+    function loadGLB(url){
+      showMsg('Loading…');
+      loader.load(
+        url,
+        (gltf)=>{
+          hideMsg();
+          console.log('✅ Loaded GLB', url);
+          const model = gltf.scene || gltf.scenes[0];
+          // safety: fix materials so they can’t render black
+          model.traverse(o=>{
+            if(!o.isMesh) return;
+            if (o.geometry && !o.geometry.attributes.normal) o.geometry.computeVertexNormals();
+            const m = o.material; if(!m) return;
+            if ('metalness' in m) m.metalness = 0.0;
+            if ('roughness' in m) m.roughness = 1.0;
+            if (!m.map && m.color) m.color.set(0xffffff);
+            m.side = THREE.DoubleSide; m.needsUpdate = true;
+          });
+          // remove previous model if any (keep cube)
+          scene.children = scene.children.filter(n => n === cube || !n.isObject3D || n.isLight || n.type.includes('Helper'));
+          scene.add(model);
+          centerAndFrame(model);
+        },
+        (xhr)=>{
+          if (xhr.total) showMsg(`Loading… ${((xhr.loaded/xhr.total)*100).toFixed(1)}%`);
+          else showMsg(`Loading… ${(xhr.loaded/1024/1024).toFixed(1)} MB`);
+        },
+        (err)=>{
+          console.error('❌ GLB load failed', err);
+          showMsg(`GLB load failed — see console`);
+        }
+      );
+    }
+
+    // buttons
+    document.getElementById('loadR2').onclick = async ()=>{
+      const ok = await head(URL_R2);
+      if (ok) loadGLB(URL_R2);
+    };
+    document.getElementById('loadSample').onclick = async ()=>{
+      const ok = await head(URL_SAMPLE);
+      if (ok) loadGLB(URL_SAMPLE);
+    };
+    document.getElementById('reset').onclick = ()=>{
+      controls.reset();
+      camera.position.set(6,4,6);
+    };
+
+    // start by just showing the cube; you click which model to load
+    renderer.setAnimationLoop(()=>{ controls.update(); renderer.render(scene, camera); });
+
     addEventListener('resize', ()=>{
       camera.aspect = innerWidth/innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(innerWidth, innerHeight);
     });
-    renderer.setAnimationLoop(()=>{ controls.update(); renderer.render(scene, camera); });
   </script>
 </body>
 </html>
