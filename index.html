@@ -18,7 +18,7 @@
     import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
     import { GLTFLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
 
-    // ✅ Use your Public Dev URL
+    // ✅ Use your Cloudflare Worker that serves R2
     const GLB_URL = 'https://r2-public.alexpurcellmusic.workers.dev/drone_scene_big.glb';
 
     // renderer
@@ -75,7 +75,7 @@
         controls.target.set(0, Math.max(size.y*0.5, 0), 0);
         controls.update();
 
-        // material fixups so nothing looks black
+        // material safety
         model.traverse(o=>{
           if(!o.isMesh) return;
           if (o.geometry && !o.geometry.attributes.normal) o.geometry.computeVertexNormals();
