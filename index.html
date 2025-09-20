@@ -1,25 +1,33 @@
 <!doctype html>
-[HEAD] 200 {
-  "content-type": "model/gltf-binary",
-  "content-length": "420291168",
-  "access-control-allow-origin": "https://alexgetthegit.github.io",
-  ...
-}
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Drone Mesh Viewer (R2)</title>
+  <title>Drone Mesh Viewer (R2 Debug)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     html,body{margin:0;height:100%;overflow:hidden;background:#222}
-    #ui{position:fixed;left:12px;top:12px;z-index:10;font:13px system-ui}
-    #ui > *{margin-right:6px}
-    #msg{position:fixed;left:12px;bottom:12px;background:rgba(0,0,0,.8);color:#fff;
-         padding:8px 10px;border-radius:8px;font:13px/1.4 system-ui;display:none;max-width:70ch}
+    #ui{position:fixed;left:12px;top:12px;z-index:10;font:13px system-ui;display:flex;gap:6px;flex-wrap:wrap}
+    #urlBox{display:flex;gap:6px;align-items:center}
+    #msg{position:fixed;left:12px;bottom:12px;background:rgba(0,0,0,.85);color:#fff;
+         padding:8px 10px;border-radius:8px;font:13px/1.4 system-ui;display:none;max-width:72ch}
+    input[type="text"]{width:520px; padding:6px 8px; border-radius:6px; border:1px solid #444; background:#111; color:#eaeaea}
+    select,button{padding:6px 10px; border-radius:6px; border:1px solid #444; background:#111; color:#eaeaea; cursor:pointer}
+    button:hover,select:hover{background:#151515}
   </style>
 </head>
 <body>
   <div id="ui">
+    <div id="urlBox">
+      <label for="endpoint">Endpoint:</label>
+      <select id="endpoint" title="Choose which public URL style to use">
+        <option value="subdomain">bucket subdomain (preferred)</option>
+        <option value="pubdev">pub dev (bucket in path)</option>
+      </select>
+      <input id="glbUrl" type="text" spellcheck="false"
+        value="https://vr-media.213530cb73b35d04a603ed81bb497175.r2.dev/drone_scene_big.glb" />
+    </div>
+    <button id="useSubdomain">Use subdomain URL</button>
+    <button id="usePubDev">Use pub-dev URL</button>
     <button id="loadR2">Load R2 model</button>
     <button id="loadSample">Load sample</button>
     <button id="reset">Reset view</button>
@@ -29,15 +37,31 @@
   <script type="module">
     console.log("🔹 script boot");
 
+    // Use esm.sh so internal imports resolve in Safari/Pages
     import * as THREE from 'https://esm.sh/three@0.160.0';
     import { OrbitControls } from 'https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js';
     import { GLTFLoader } from 'https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
+    // If you later use meshopt compression:
+    // import { MeshoptDecoder } from 'https://esm.sh/meshoptimizer@0.20.0/meshopt_decoder.module.js';
 
-    // ✅ Correct public URL for your file in R2
-    const URL_R2     = 'https://pub-8cbedf6990d4e39a938e2cee5080e7a.r2.dev/vr-media/drone_scene_big.glb';
-    const URL_SAMPLE = 'https://modelviewer.dev/shared-assets/models/Astronaut.glb';
+    // Your two public URL styles (you can test either)
+    const URL_SUBDOMAIN = 'https://vr-media.213530cb73b35d04a603ed81bb497175.r2.dev/drone_scene_big.glb';
+    const URL_PUBDEV    = 'https://pub-8cbedf6990d4e39a938e2cee5080e7a.r2.dev/vr-media/drone_scene_big.glb';
+    const URL_SAMPLE    = 'https://modelviewer.dev/shared-assets/models/Astronaut.glb';
 
-    // renderer
+    const endpointSel = document.getElementById('endpoint');
+    const urlInput    = document.getElementById('glbUrl');
+    const msg         = document.getElementById('msg');
+
+    // Initialize the URL box to subdomain URL
+    endpointSel.value = 'subdomain';
+    urlInput.value = URL_SUBDOMAIN;
+
+    // Quick helpers
+    const showMsg = t => { msg.textContent = t; msg.style.display = 'block'; };
+    const hideMsg = () => { msg.style.display = 'none'; };
+
+    // Three.js boilerplate
     const renderer = new THREE.WebGLRenderer({ antialias:true });
     renderer.setSize(innerWidth, innerHeight);
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -45,37 +69,38 @@
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     document.body.appendChild(renderer.domElement);
 
-    // scene/camera/controls
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x333333);
+
     const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 10000);
     camera.position.set(6,4,6);
+
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
 
-    // lights
+    // Lights
     scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.0));
     const dir = new THREE.DirectionalLight(0xffffff, 1.2); dir.position.set(10,20,10); scene.add(dir);
 
-    // debug helpers
+    // Debug helpers
     scene.add(new THREE.GridHelper(50,50,0x666666,0x333333));
     scene.add(new THREE.AxesHelper(5));
-    const cube = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), new THREE.MeshStandardMaterial({color:0x33aaff}));
+
+    // Always-visible cube
+    const cube = new THREE.Mesh(new THREE.BoxGeometry(1,1,1),
+                  new THREE.MeshStandardMaterial({ color: 0x33aaff }));
     cube.position.set(0,1,0);
     scene.add(cube);
 
-    const msg = document.getElementById('msg');
-    const showMsg = t => { msg.textContent = t; msg.style.display = 'block'; };
-    const hideMsg = () => { msg.style.display = 'none'; };
-
     const loader = new GLTFLoader();
+    // loader.setMeshoptDecoder(MeshoptDecoder); // if you switch to meshopt compression later
 
     function centerAndFrame(object){
       const box = new THREE.Box3().setFromObject(object);
       const c = box.getCenter(new THREE.Vector3());
       const s = box.getSize(new THREE.Vector3());
       object.position.sub(c);
-      object.position.y -= box.min.y;
+      object.position.y -= box.min.y; // sit on grid
       const dist = s.length()/(2*Math.tan(THREE.MathUtils.degToRad(camera.fov)/2));
       camera.position.set(dist, dist*0.5, dist);
       controls.target.set(0, Math.max(s.y*0.5, 0), 0);
@@ -85,10 +110,17 @@
     async function head(url){
       try{
         const r = await fetch(url, { method:'HEAD' });
-        console.log('[HEAD]', url, r.status);
-        showMsg(`HEAD ${r.status} — ${url}`);
-        return r.ok;
-      }catch(e){ console.error('[HEAD error]', e); showMsg(`HEAD error: ${e}`); return false; }
+        const headers = Object.fromEntries(r.headers.entries());
+        console.log('[HEAD]', r.status, headers);
+        if (!r.ok) throw new Error(`HEAD ${r.status}`);
+        // Show key CORS bits on screen too
+        showMsg(`HEAD ${r.status} — ${headers['content-type'] || ''} — ACO: ${headers['access-control-allow-origin'] || 'none'}`);
+        return true;
+      }catch(e){
+        console.error('[HEAD error]', e);
+        showMsg(`HEAD error — ${e}`);
+        return false;
+      }
     }
 
     function loadGLB(url){
@@ -98,10 +130,10 @@
         (gltf)=>{
           hideMsg();
           console.log('✅ Loaded', url);
-          const model = gltf.scene || gltf.scenes[0];
-          // keep lights/helpers/cube; remove prior models
+          // Keep lights/helpers/cube; remove prior models
           scene.children = scene.children.filter(n => n === cube || n.isLight || n.type.includes('Helper'));
-          scene.add(model);
+          const model = gltf.scene || gltf.scenes[0];
+          // Material safety: avoid black
           model.traverse(o=>{
             if(!o.isMesh) return;
             if (o.geometry && !o.geometry.attributes.normal) o.geometry.computeVertexNormals();
@@ -111,23 +143,53 @@
             if(!m.map && m.color) m.color.set(0xffffff);
             m.side = THREE.DoubleSide; m.needsUpdate = true;
           });
+          scene.add(model);
           centerAndFrame(model);
         },
-        (xhr)=>{ if(xhr.total) showMsg(`Loading… ${((xhr.loaded/xhr.total)*100).toFixed(1)}%`); },
-        (err)=>{ console.error('❌ load failed', err); showMsg('Load failed — see console'); }
+        (xhr)=>{
+          if (xhr.total) showMsg(`Loading… ${((xhr.loaded/xhr.total)*100).toFixed(1)}%`);
+          else showMsg(`Loading… ${(xhr.loaded/1024/1024).toFixed(1)} MB`);
+        },
+        (err)=>{
+          console.error('❌ load failed', err);
+          showMsg('Load failed — see console');
+        }
       );
     }
 
-    // Buttons
-    document.getElementById('loadR2').onclick     = async ()=>{ if(await head(URL_R2))     loadGLB(URL_R2); };
-    document.getElementById('loadSample').onclick = async ()=>{ if(await head(URL_SAMPLE)) loadGLB(URL_SAMPLE); };
-    document.getElementById('reset').onclick = ()=>{ controls.reset(); camera.position.set(6,4,6); };
+    // UI actions
+    document.getElementById('useSubdomain').onclick = ()=>{
+      endpointSel.value = 'subdomain';
+      urlInput.value = URL_SUBDOMAIN;
+    };
+    document.getElementById('usePubDev').onclick = ()=>{
+      endpointSel.value = 'pubdev';
+      urlInput.value = URL_PUBDEV;
+    };
+    document.getElementById('loadR2').onclick = async ()=>{
+      const url = urlInput.value.trim();
+      if (await head(url)) loadGLB(url);
+    };
+    document.getElementById('loadSample').onclick = async ()=>{
+      if (await head(URL_SAMPLE)) loadGLB(URL_SAMPLE);
+    };
+    document.getElementById('reset').onclick = ()=>{
+      controls.reset(); camera.position.set(6,4,6);
+    };
 
     // Render heartbeat
     let frame=0;
-    renderer.setAnimationLoop(()=>{ if((frame++%60)===0) console.log('🎥 rendering'); controls.update(); renderer.render(scene,camera); });
+    renderer.setAnimationLoop(()=>{
+      if ((frame++ % 60) === 0) console.log('🎥 rendering');
+      controls.update();
+      renderer.render(scene, camera);
+    });
 
-    addEventListener('resize', ()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
+    addEventListener('resize', ()=>{
+      camera.aspect = innerWidth/innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
   </script>
 </body>
 </html>
