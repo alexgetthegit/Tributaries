@@ -5,12 +5,13 @@
   <title>Drone Mesh Viewer (Debug)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    html,body{margin:0;height:100%;overflow:hidden;background:#111}
+    html,body{margin:0;height:100%;overflow:hidden;background:#222}
     #ui{position:fixed;left:12px;top:12px;z-index:10;font:13px system-ui}
     #ui > *{margin-right:6px}
-    #msg{position:fixed;left:12px;bottom:12px;background:rgba(0,0,0,.75);color:#fff;
-         padding:8px 10px;border-radius:8px;font:13px/1.4 system-ui;display:none;max-width:60ch}
+    #msg{position:fixed;left:12px;bottom:12px;background:rgba(0,0,0,.8);color:#fff;
+         padding:8px 10px;border-radius:8px;font:13px/1.4 system-ui;display:none;max-width:70ch}
   </style>
+  <noscript><div style="color:#fff;padding:12px">JavaScript is disabled.</div></noscript>
 </head>
 <body>
   <div id="ui">
@@ -21,14 +22,18 @@
   <div id="msg"></div>
 
   <script type="module">
-    import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-    import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
-    import { GLTFLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
+    console.log("🔹 script boot");
 
-    const URL_R2 = 'https://vr-media.213530cb73b35d04a603ed81bb497175.r2.dev/drone_scene_big.glb';
+    // Use esm.sh so sub-imports resolve automatically (avoids “module name 'three'” errors)
+    import * as THREE from 'https://esm.sh/three@0.160.0';
+    import { OrbitControls } from 'https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+    import { GLTFLoader } from 'https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
+    // Meshopt later (only if you compress): import { MeshoptDecoder } from 'https://esm.sh/meshoptimizer@0.20.0/meshopt_decoder.module.js';
+
+    const URL_R2     = 'https://vr-media.213530cb73b35d04a603ed81bb497175.r2.dev/drone_scene_big.glb';
     const URL_SAMPLE = 'https://modelviewer.dev/shared-assets/models/Astronaut.glb';
 
-    // renderer
+    // Renderer
     const renderer = new THREE.WebGLRenderer({ antialias:true });
     renderer.setSize(innerWidth, innerHeight);
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -36,44 +41,39 @@
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     document.body.appendChild(renderer.domElement);
 
-    // scene/camera/controls
+    // Scene / camera / controls
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x333333);   // brighter than pure black
+    scene.background = new THREE.Color(0x333333);
     const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 10000);
     camera.position.set(6,4,6);
-
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
 
-    // lights
+    // Lights
     scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.0));
-    const dir = new THREE.DirectionalLight(0xffffff, 1.25); dir.position.set(10,20,10); scene.add(dir);
+    const dir = new THREE.DirectionalLight(0xffffff, 1.2); dir.position.set(10,20,10); scene.add(dir);
 
-    // debug helpers (always visible)
-    scene.add(new THREE.GridHelper(50, 50, 0x555555, 0x333333));
+    // Always-visible debug
+    scene.add(new THREE.GridHelper(50,50,0x666666,0x333333));
     scene.add(new THREE.AxesHelper(5));
-
-    // always-visible test cube
-    const cube = new THREE.Mesh(
-      new THREE.BoxGeometry(1,1,1),
-      new THREE.MeshStandardMaterial({ color: 0x33aaff })
-    );
-    cube.position.set(0, 1, 0); // float above grid
+    const cube = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), new THREE.MeshStandardMaterial({color:0x33aaff}));
+    cube.position.set(0,1,0);
     scene.add(cube);
 
     const msg = document.getElementById('msg');
-    const showMsg = (t)=>{ msg.textContent = t; msg.style.display = 'block'; };
-    const hideMsg = ()=>{ msg.style.display = 'none'; };
+    const showMsg = t => { msg.textContent = t; msg.style.display = 'block'; };
+    const hideMsg = () => { msg.style.display = 'none'; };
 
     const loader = new GLTFLoader();
+    // If meshopt later: loader.setMeshoptDecoder(MeshoptDecoder);
 
     function centerAndFrame(object){
       const box = new THREE.Box3().setFromObject(object);
       const c = box.getCenter(new THREE.Vector3());
       const s = box.getSize(new THREE.Vector3());
       object.position.sub(c);
-      object.position.y -= box.min.y; // sit on grid
-      const dist = s.length() / (2*Math.tan(THREE.MathUtils.degToRad(camera.fov)/2));
+      object.position.y -= box.min.y;
+      const dist = s.length()/(2*Math.tan(THREE.MathUtils.degToRad(camera.fov)/2));
       camera.position.set(dist, dist*0.5, dist);
       controls.target.set(0, Math.max(s.y*0.5, 0), 0);
       controls.update();
@@ -82,14 +82,10 @@
     async function head(url){
       try{
         const r = await fetch(url, { method:'HEAD' });
-        console.log('[HEAD]', url, r.status, Object.fromEntries(r.headers));
+        console.log('[HEAD]', url, r.status);
         showMsg(`HEAD ${r.status} — ${url}`);
         return r.ok;
-      }catch(e){
-        console.warn('[HEAD error]', e);
-        showMsg(`HEAD error — ${e}`);
-        return false;
-      }
+      }catch(e){ console.error('[HEAD error]', e); showMsg(`HEAD error: ${e}`); return false; }
     }
 
     function loadGLB(url){
@@ -98,56 +94,38 @@
         url,
         (gltf)=>{
           hideMsg();
-          console.log('✅ Loaded GLB', url);
+          console.log('✅ Loaded', url);
           const model = gltf.scene || gltf.scenes[0];
-          // remove previous model if any (keep cube + lights + helpers)
-          scene.children = scene.children.filter(n =>
-            n === cube || n.isLight || n.type.includes('Helper')
-          );
+          // keep lights/helpers/cube; remove prior models
+          scene.children = scene.children.filter(n => n === cube || n.isLight || n.type.includes('Helper'));
           scene.add(model);
-
-          // safety for materials
+          // material safety
           model.traverse(o=>{
             if(!o.isMesh) return;
             if (o.geometry && !o.geometry.attributes.normal) o.geometry.computeVertexNormals();
-            const m = o.material; if(!m) return;
-            if ('metalness' in m) m.metalness = 0.0;
-            if ('roughness' in m) m.roughness = 1.0;
-            if (!m.map && m.color) m.color.set(0xffffff);
+            const m=o.material; if(!m) return;
+            if('metalness' in m) m.metalness = 0.0;
+            if('roughness' in m) m.roughness = 1.0;
+            if(!m.map && m.color) m.color.set(0xffffff);
             m.side = THREE.DoubleSide; m.needsUpdate = true;
           });
-
           centerAndFrame(model);
         },
-        (xhr)=>{
-          if (xhr.total) showMsg(`Loading… ${((xhr.loaded/xhr.total)*100).toFixed(1)}%`);
-          else showMsg(`Loading… ${(xhr.loaded/1024/1024).toFixed(1)} MB`);
-        },
-        (err)=>{
-          console.error('❌ GLB load failed', err);
-          showMsg(`GLB load failed — see console`);
-        }
+        (xhr)=>{ if(xhr.total) showMsg(`Loading… ${((xhr.loaded/xhr.total)*100).toFixed(1)}%`); },
+        (err)=>{ console.error('❌ load failed', err); showMsg('Load failed — see console'); }
       );
     }
 
-    // buttons
-    document.getElementById('loadR2').onclick = async ()=>{ if (await head(URL_R2)) loadGLB(URL_R2); };
-    document.getElementById('loadSample').onclick = async ()=>{ if (await head(URL_SAMPLE)) loadGLB(URL_SAMPLE); };
+    // Buttons
+    document.getElementById('loadR2').onclick     = async ()=>{ if(await head(URL_R2))     loadGLB(URL_R2); };
+    document.getElementById('loadSample').onclick = async ()=>{ if(await head(URL_SAMPLE)) loadGLB(URL_SAMPLE); };
     document.getElementById('reset').onclick = ()=>{ controls.reset(); camera.position.set(6,4,6); };
 
-    // render heartbeat so you know it’s drawing
-    let frame = 0;
-    renderer.setAnimationLoop(()=>{
-      if ((frame++ % 60) === 0) console.log('🎥 rendering…');
-      controls.update();
-      renderer.render(scene, camera);
-    });
+    // Render heartbeat
+    let frame=0;
+    renderer.setAnimationLoop(()=>{ if((frame++%60)===0) console.log('🎥 rendering'); controls.update(); renderer.render(scene,camera); });
 
-    addEventListener('resize', ()=>{
-      camera.aspect = innerWidth/innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(innerWidth, innerHeight);
-    });
+    addEventListener('resize', ()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
   </script>
 </body>
 </html>
