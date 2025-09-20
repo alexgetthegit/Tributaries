@@ -5,86 +5,118 @@
   <title>Drone Mesh Viewer</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    html,body { margin:0; height:100%; overflow:hidden; background:#000; }
-    canvas { display:block; }
+    html,body{margin:0;height:100%;overflow:hidden;background:#111}
+    #msg{position:fixed;left:12px;bottom:12px;background:rgba(0,0,0,.75);color:#fff;
+         padding:8px 10px;border-radius:8px;font:13px/1.4 system-ui;display:none}
   </style>
 </head>
 <body>
+  <div id="msg"></div>
+
   <script type="module">
     import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
     import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
     import { GLTFLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
+    // If you later use meshopt compression, also add:
+    // import { MeshoptDecoder } from 'https://unpkg.com/meshoptimizer@0.20.0/meshopt_decoder.module.js';
 
-    // Setup renderer
+    const GLB_URL = 'https://vr-media.213530cb73b35d04a603ed81bb497175.r2.dev/drone_scene_big.glb'; // ✅ public URL
+
+    // renderer
     const renderer = new THREE.WebGLRenderer({ antialias:true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
     document.body.appendChild(renderer.domElement);
 
-    // Scene & Camera
+    // scene/camera/controls
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x111111);
-
-    const camera = new THREE.PerspectiveCamera(
-      60, window.innerWidth/window.innerHeight, 0.1, 10000
-    );
-    camera.position.set(6, 4, 6);
-
+    const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 10000);
+    camera.position.set(6,4,6);
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
 
-    // Lights
-    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-    const dir = new THREE.DirectionalLight(0xffffff, 1.0);
-    dir.position.set(10, 20, 10);
-    scene.add(dir);
+    // lights
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.0));
+    const dir = new THREE.DirectionalLight(0xffffff, 1.25); dir.position.set(10,20,10); scene.add(dir);
 
-    // GLB Loader
+    // helpers (uncomment to debug)
+    // scene.add(new THREE.GridHelper(200,200,0x444444,0x222222));
+    // scene.add(new THREE.AxesHelper(2));
+
+    const msg = document.getElementById('msg');
+    const showMsg = t => { msg.textContent = t; msg.style.display = 'block'; };
+    const hideMsg = () => { msg.style.display = 'none'; };
+
+    // loader
     const loader = new GLTFLoader();
-    const GLB_URL = 'https://vr-media.213530cb73b35d04a603ed81bb497175.r2.cloudflarestorage.com/drone_scene_big.glb';
+    // If using meshopt-compressed GLB in future:
+    // loader.setMeshoptDecoder(MeshoptDecoder);
+
+    // quick HEAD so you can see headers in console
+    fetch(GLB_URL, { method:'HEAD' })
+      .then(r => console.log('[HEAD]', r.status, Object.fromEntries(r.headers)))
+      .catch(e => console.warn('[HEAD error]', e));
 
     loader.load(
       GLB_URL,
       (gltf) => {
-        console.log("✅ Loaded GLB");
-        const model = gltf.scene;
+        hideMsg();
+        console.log('✅ Loaded GLB');
+        const model = gltf.scene || gltf.scenes[0];
         scene.add(model);
 
-        // Center & ground the model
+        // center & ground
         const box = new THREE.Box3().setFromObject(model);
         const center = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3());
-
         model.position.sub(center);
         model.position.y -= box.min.y;
 
-        // Adjust camera
-        const dist = size.length() / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov)/2));
+        // camera frame
+        const dist = size.length() / (2*Math.tan(THREE.MathUtils.degToRad(camera.fov)/2));
         camera.position.set(dist, dist*0.5, dist);
-        controls.target.set(0, size.y*0.5, 0);
+        controls.target.set(0, Math.max(size.y*0.5, 0), 0);
         controls.update();
+
+        // material safety so it never looks black
+        model.traverse(o=>{
+          if(!o.isMesh) return;
+          if (o.geometry && !o.geometry.attributes.normal) o.geometry.computeVertexNormals();
+          const m = o.material; if(!m) return;
+          if ('metalness' in m) m.metalness = 0.0;
+          if ('roughness' in m) m.roughness = 1.0;
+          if (!m.map && m.color) m.color.set(0xffffff);
+          m.side = THREE.DoubleSide;
+          m.needsUpdate = true;
+        });
       },
       (xhr) => {
-        if (xhr.total) console.log(`Loading: ${(xhr.loaded / xhr.total * 100).toFixed(1)}%`);
+        if (xhr.total) showMsg(`Loading… ${((xhr.loaded/xhr.total)*100).toFixed(1)}%`);
+        else showMsg(`Loading… ${(xhr.loaded/1024/1024).toFixed(1)} MB`);
       },
       (err) => {
-        console.error("❌ Failed to load GLB", err);
+        console.error('❌ GLB load failed', err);
+        showMsg('GLB load failed — see console (Network tab) for details');
+        // fallback cube so the page never looks empty
+        const cube = new THREE.Mesh(
+          new THREE.BoxGeometry(1,1,1),
+          new THREE.MeshStandardMaterial({ color: 0x33aaff })
+        );
+        cube.position.y = 0.5;
+        scene.add(cube);
       }
     );
 
-    // Animate
-    function animate() {
-      requestAnimationFrame(animate);
-      controls.update();
-      renderer.render(scene, camera);
-    }
-    animate();
-
-    // Resize
-    window.addEventListener('resize', () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
+    // loop & resize
+    addEventListener('resize', ()=>{
+      camera.aspect = innerWidth/innerHeight;
       camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setSize(innerWidth, innerHeight);
     });
+    renderer.setAnimationLoop(()=>{ controls.update(); renderer.render(scene, camera); });
   </script>
 </body>
 </html>
