@@ -6,30 +6,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     html,body{margin:0;height:100%;overflow:hidden;background:#111}
-    #ui{
-      position:absolute;top:12px;left:12px;z-index:10;display:flex;gap:8px;align-items:center;flex-wrap:wrap;
-      color:#fff;font:14px/1.4 system-ui,-apple-system,sans-serif;background:rgba(0,0,0,.45);
-      padding:10px 12px;border-radius:10px
-    }
-    #progress{
-      position:absolute;top:12px;right:12px;z-index:10;color:#fff;
-      font:13px system-ui,-apple-system,sans-serif;background:rgba(0,0,0,.45);
-      padding:8px 10px;border-radius:10px;display:none
-    }
+    #ui{position:absolute;top:12px;left:12px;z-index:10;display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+        color:#fff;font:14px/1.4 system-ui,-apple-system,sans-serif;background:rgba(0,0,0,.45);
+        padding:10px 12px;border-radius:10px}
+    #progress{position:absolute;top:12px;right:12px;z-index:10;color:#fff;font:13px system-ui,-apple-system,sans-serif;
+        background:rgba(0,0,0,.45);padding:8px 10px;border-radius:10px;display:none}
     select,button,label{background:#1c1c1c;color:#fff;border:1px solid #333;border-radius:8px;padding:6px 8px}
     button{cursor:pointer} label{display:inline-flex;align-items:center;gap:6px}
     #hint{opacity:.8;border:none;background:transparent;padding:0}
   </style>
-  <!-- Three.js (global build) -->
-  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
-  <script src="https://unpkg.com/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
-  <script src="https://unpkg.com/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
+
+  <!-- ✅ Pin to r149 (works with non-module examples/js/*) -->
+  <script src="https://unpkg.com/three@0.149.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.149.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://unpkg.com/three@0.149.0/examples/js/loaders/GLTFLoader.js"></script>
 </head>
 <body>
   <div id="ui">
     <label for="world"><strong>World:</strong></label>
     <select id="world">
-      <!-- Make sure this filename matches what’s in your R2 bucket -->
+      <!-- Make sure this matches your R2 filename exactly -->
       <option value="drone_scene_2025-09-19_metashape250_decimated.glb" selected>Decimated (250)</option>
     </select>
     <button id="reset">Reset view</button>
@@ -49,8 +45,7 @@
     const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.outputEncoding = THREE.sRGBEncoding; // r149 uses outputEncoding
 
     // Scene / Camera / Controls
     const scene = new THREE.Scene();
@@ -69,13 +64,12 @@
     dir.position.set(10,20,10);
     scene.add(dir);
 
-    // Always-visible references
+    // Grid / axes / test cube
     const grid = new THREE.GridHelper(100,100,0x444444,0x222222);
     scene.add(grid);
     const axes = new THREE.AxesHelper(1.5);
     scene.add(axes);
 
-    // Test cube
     const cube = new THREE.Mesh(
       new THREE.BoxGeometry(1,1,1),
       new THREE.MeshStandardMaterial({ color:0x3366ff, roughness:0.8, metalness:0.1 })
@@ -83,7 +77,7 @@
     cube.position.set(0.5,0.5,0.5);
     scene.add(cube);
 
-    // Loader (global)
+    // Loader
     const loader = new THREE.GLTFLoader();
     loader.crossOrigin = 'anonymous';
 
@@ -136,7 +130,7 @@
           progressEl.style.display = 'none';
           currentRoot = gltf.scene || gltf.scenes[0];
           scene.add(currentRoot);
-          // If it imports tilted, uncomment this:
+          // If it imports tilted, you can fix once:
           // currentRoot.rotation.x = -Math.PI/2;
           centerAndGround(currentRoot);
         },
@@ -158,11 +152,7 @@
     // UI
     resetBtn.addEventListener('click', ()=>{
       if(currentRoot) centerAndGround(currentRoot);
-      else{
-        camera.position.set(6,4,6);
-        controls.target.set(0,0,0);
-        controls.update();
-      }
+      else{ camera.position.set(6,4,6); controls.target.set(0,0,0); controls.update(); }
     });
     autoEl.addEventListener('change', ()=>{
       controls.autoRotate = autoEl.checked;
