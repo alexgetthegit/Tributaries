@@ -6,18 +6,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     html,body{margin:0;height:100%;overflow:hidden;background:#111}
-    #hud{position:fixed;left:10px;top:10px;color:#ddd;font:13px/1.4 system-ui;background:rgba(0,0,0,.45);padding:8px 10px;border-radius:8px}
-    #msg{position:fixed;left:10px;bottom:10px;color:#fff;font:13px/1.4 system-ui;background:rgba(0,0,0,.75);padding:8px 10px;border-radius:8px;display:none}
-    a{color:#9cf}
+    #hud{position:fixed;left:10px;top:10px;color:#ccc;font:12px/1.4 system-ui;background:rgba(0,0,0,.5);padding:8px 10px;border-radius:8px}
+    #msg{position:fixed;left:10px;bottom:10px;color:#fff;background:rgba(0,0,0,.75);padding:8px 10px;border-radius:8px;display:none}
   </style>
 </head>
 <body>
-  <div id="hud">
-    drag=orbit • wheel=zoom • right-drag=pan<br/>
-    <b>Move:</b> WASD (+Shift run) • <b>VR:</b> left stick move, right stick snap<br/>
-    <b>Orient:</b> Q/E yaw ±15°, Z/X tilt ±15°, G ground, F lay flat
+  <div id="hud">drag=orbit · wheel=zoom · right-drag=pan<br>
+    Move: WASD (+Shift run) · VR: left stick move, right stick snap<br>
+    Orient: Q/E yaw ±15° · Z/X tilt ±15° · G ground, F lay flat
   </div>
-  <div id="msg">Loading…</div>
+  <div id="msg"></div>
 
   <script type="module">
     import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
@@ -25,73 +23,66 @@
     import { GLTFLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
     import { VRButton } from 'https://unpkg.com/three@0.160.0/examples/jsm/webxr/VRButton.js';
 
-    // 🔗 Your Cloudflare Worker (public) URL
+    // ✅ your Worker URL (public, supports range requests)
     const GLB_URL = 'https://r2-public.alexpurcellmusic.workers.dev/drone_scene_big.glb';
 
-    // ----- renderer & scene -----
+    // renderer
     const renderer = new THREE.WebGLRenderer({ antialias:true });
     renderer.setSize(innerWidth, innerHeight);
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.xr.enabled = true;
+    renderer.xr.enabled = true;                       // ← REQUIRED for VR
     document.body.appendChild(renderer.domElement);
+
+    // Add VR button (only shows on WebXR-capable browsers, e.g., Quest Browser)
     document.body.appendChild(VRButton.createButton(renderer));
 
+    // scene/camera/controls
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x111111);
-
-    // ----- camera in a player rig -----
-    const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 10000);
-    const player = new THREE.Group();
-    player.position.set(0, 1.6, 0); // eye height
-    player.add(camera);
-    scene.add(player);
-
-    // ----- controls (desktop orbit) -----
+    const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 20000);
+    camera.position.set(6,4,6);
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
 
-    // ----- lights -----
+    // lights
     scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.0));
-    const dir = new THREE.DirectionalLight(0xffffff, 1.25); dir.position.set(10,20,10);
-    scene.add(dir);
+    const dir = new THREE.DirectionalLight(0xffffff, 1.25); dir.position.set(10,20,10); scene.add(dir);
 
+    // simple ground for orientation
+    const grid = new THREE.GridHelper(200, 200, 0x444444, 0x222222); grid.position.y = 0; scene.add(grid);
+
+    // UI helpers
     const msg = document.getElementById('msg');
     const showMsg = t => { msg.textContent = t; msg.style.display = 'block'; };
     const hideMsg = () => { msg.style.display = 'none'; };
 
-    // ----- orientation helpers -----
-    function groundObject(obj) {
-      const box = new THREE.Box3().setFromObject(obj);
-      if (!isFinite(box.min.y) || !isFinite(box.max.y)) return;
-      const center = box.getCenter(new THREE.Vector3());
-      obj.position.sub(center);     // center at world origin
-      obj.position.y -= box.min.y;  // sit on ground (y=0)
-    }
-    function rotateY(obj, deg){ obj.rotation.y += THREE.MathUtils.degToRad(deg); }
-    function rotateX(obj, deg){ obj.rotation.x += THREE.MathUtils.degToRad(deg); }
-    function layFlat(obj){ obj.rotation.x = -Math.PI/2; groundObject(obj); }
-
-    // ----- load model -----
+    // load model
     const loader = new GLTFLoader();
-
-    fetch(GLB_URL, { method:'HEAD' })
-      .then(r => console.log('[HEAD]', r.status, Object.fromEntries(r.headers)))
-      .catch(e => console.warn('[HEAD error]', e));
-
-    let model = null;
-
     loader.load(
       GLB_URL,
       (gltf) => {
         hideMsg();
-        model = gltf.scene || gltf.scenes[0];
+        const model = gltf.scene || gltf.scenes[0];
         scene.add(model);
 
-        // Make materials safe/visible
+        // center & ground
+        const box = new THREE.Box3().setFromObject(model);
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+        model.position.sub(center);
+        model.position.y -= box.min.y;   // sit on y=0
+
+        // frame camera
+        const dist = size.length() / (2*Math.tan(THREE.MathUtils.degToRad(camera.fov)/2));
+        camera.position.set(dist, dist*0.5, dist);
+        controls.target.set(0, Math.max(size.y*0.5, 1), 0);
+        controls.update();
+
+        // material safety (avoid black)
         model.traverse(o=>{
-          if(!o.isMesh) return;
+          if (!o.isMesh) return;
           if (o.geometry && !o.geometry.attributes.normal) o.geometry.computeVertexNormals();
           const m = o.material; if (!m) return;
           if ('metalness' in m) m.metalness = 0.0;
@@ -100,118 +91,72 @@
           m.side = THREE.DoubleSide;
           m.needsUpdate = true;
         });
-
-        // Ground & center
-        groundObject(model);
-        // If it still stands on a wall, press F (or uncomment next line)
-        // layFlat(model);
-
-        // Frame camera at a comfy distance
-        const box  = new THREE.Box3().setFromObject(model);
-        const size = box.getSize(new THREE.Vector3());
-        const dist = size.length() / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov)/2));
-        camera.position.set(dist, dist*0.5, dist);
-        controls.target.set(0, Math.max(size.y*0.5, 0), 0);
-        controls.update();
       },
       (xhr) => {
         if (xhr.total) showMsg(`Loading… ${((xhr.loaded/xhr.total)*100).toFixed(1)}%`);
         else showMsg(`Loading… ${(xhr.loaded/1024/1024).toFixed(1)} MB`);
       },
       (err) => {
-        console.error('❌ GLB load failed', err);
-        showMsg('GLB load failed — see console Network tab.');
+        console.error('GLB load failed', err);
+        showMsg('GLB load failed — see console');
       }
     );
 
-    // ----- runtime orientation hotkeys -----
-    window.addEventListener('keydown', (e)=>{
-      if (!model) return;
-      const k = e.key.toLowerCase();
-      if (k === 'q') rotateY(model, -15);
-      if (k === 'e') rotateY(model,  15);
-      if (k === 'z') rotateX(model, -15);
-      if (k === 'x') rotateX(model,  15);
-      if (k === 'g') groundObject(model);
-      if (k === 'f') layFlat(model);
+    // WASD desktop locomotion (for quick testing)
+    const keys = new Set();
+    addEventListener('keydown', e=>keys.add(e.code));
+    addEventListener('keyup', e=>keys.delete(e.code));
+    function moveDesktop(dt){
+      const speed = (keys.has('ShiftLeft')||keys.has('ShiftRight')) ? 12 : 4; // m/s
+      const v = new THREE.Vector3();
+      if (keys.has('KeyW')) v.z -= 1;
+      if (keys.has('KeyS')) v.z += 1;
+      if (keys.has('KeyA')) v.x -= 1;
+      if (keys.has('KeyD')) v.x += 1;
+      if (v.lengthSq()) {
+        v.normalize().applyAxisAngle(new THREE.Vector3(0,1,0), controls.getAzimuthalAngle());
+        camera.position.addScaledVector(v, speed*dt);
+        controls.target.addScaledVector(v, speed*dt);
+      }
+      // quick orientation helpers
+      if (keys.has('KeyQ')) controls.rotateLeft(+THREE.MathUtils.degToRad(15)), keys.delete('KeyQ');
+      if (keys.has('KeyE')) controls.rotateLeft(-THREE.MathUtils.degToRad(15)), keys.delete('KeyE');
+      if (keys.has('KeyZ')) camera.rotateZ( THREE.MathUtils.degToRad( 15)), keys.delete('KeyZ');
+      if (keys.has('KeyX')) camera.rotateZ(-THREE.MathUtils.degToRad( 15)), keys.delete('KeyX');
+      if (keys.has('KeyG')) { // ground model
+        scene.traverse(o=>{
+          if (o.isMesh && o !== grid) {
+            const b = new THREE.Box3().setFromObject(o);
+            o.position.y -= b.min.y;
+          }
+        }); keys.delete('KeyG');
+      }
+      if (keys.has('KeyF')) { // lay flat (rotate X to 0)
+        scene.rotation.x = 0; keys.delete('KeyF');
+      }
+    }
+
+    // render / animate
+    let last = performance.now();
+    renderer.setAnimationLoop(()=>{
+      const now = performance.now(); const dt = Math.min(0.05, (now-last)/1000); last = now;
+      if (!renderer.xr.isPresenting) moveDesktop(dt); // desktop only
+      controls.update();
+      renderer.render(scene, camera);
     });
 
-    // ----- desktop locomotion (WASD + Shift) -----
-    const keys = new Set();
-    addEventListener('keydown', e => keys.add(e.key.toLowerCase()));
-    addEventListener('keyup',   e => keys.delete(e.key.toLowerCase()));
-
-    function moveDesktop(dt) {
-      const fwd = new THREE.Vector3(); camera.getWorldDirection(fwd); fwd.y = 0; fwd.normalize();
-      const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0,1,0)).negate();
-
-      let speed = keys.has('shift') ? 6 : 2.5;
-      const v = new THREE.Vector3();
-      if (keys.has('w')) v.add(fwd);
-      if (keys.has('s')) v.sub(fwd);
-      if (keys.has('a')) v.sub(right);
-      if (keys.has('d')) v.add(right);
-      if (v.lengthSq() > 0) {
-        v.normalize().multiplyScalar(speed * dt);
-        player.position.add(v);
-      }
-    }
-
-    // ----- VR locomotion (left stick move, right stick 30° snap) -----
-    let snapTurnCooldown = 0;
-    function moveVR(dt) {
-      const session = renderer.xr.getSession();
-      if (!session) return;
-
-      const fwd = new THREE.Vector3(); camera.getWorldDirection(fwd); fwd.y = 0; fwd.normalize();
-      const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0,1,0)).negate();
-
-      for (const src of session.inputSources) {
-        const gp = src?.gamepad; if (!gp) continue;
-
-        const lx = gp.axes[2] ?? 0;   // left stick X
-        const ly = gp.axes[3] ?? 0;   // left stick Y
-        const rx = gp.axes[0] ?? 0;   // right stick X (common mapping)
-
-        const dead = 0.15;
-        const ax = Math.abs(lx) > dead ? lx : 0;
-        const ay = Math.abs(ly) > dead ? ly : 0;
-
-        if (ax || ay) {
-          const move = new THREE.Vector3();
-          move.addScaledVector(right, ax);
-          move.addScaledVector(fwd, -ay); // up on stick = -Y
-          move.normalize().multiplyScalar(3.0 * dt);
-          player.position.add(move);
-        }
-
-        snapTurnCooldown -= dt;
-        if (snapTurnCooldown <= 0 && Math.abs(rx) > 0.6) {
-          player.rotateY((rx > 0 ? -1 : 1) * THREE.MathUtils.degToRad(30));
-          snapTurnCooldown = 0.25;
-        }
-      }
-    }
-
-    // ----- loop & resize -----
+    // resize
     addEventListener('resize', ()=>{
       camera.aspect = innerWidth/innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(innerWidth, innerHeight);
     });
 
-    let last = performance.now();
-    renderer.setAnimationLoop(()=>{
-      const now = performance.now();
-      const dt = Math.min(0.05, (now - last)/1000);
-      last = now;
-
-      if (!renderer.xr.isPresenting) moveDesktop(dt);
-      moveVR(dt);
-
-      controls.update();
-      renderer.render(scene, camera);
-    });
+    // Helpful note if WebXR isn’t available
+    if (!('xr' in navigator)) {
+      showMsg('WebXR not available in this browser. Use the Quest Browser/Chrome on headset for the Enter VR button.');
+      setTimeout(hideMsg, 5000);
+    }
   </script>
 </body>
 </html>
