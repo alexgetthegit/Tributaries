@@ -1,54 +1,193 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Hello Cube</title>
+  <title>Drone Mesh Viewer — Preview</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>html,body{margin:0;height:100%;overflow:hidden;background:#111}</style>
+  <style>
+    html,body{margin:0;height:100%;overflow:hidden;background:#111}
+    #ui{
+      position:absolute;top:12px;left:12px;z-index:10;display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+      color:#fff;font:14px/1.4 system-ui,-apple-system,sans-serif;background:rgba(0,0,0,.45);
+      padding:10px 12px;border-radius:10px
+    }
+    #progress{
+      position:absolute;top:12px;right:12px;z-index:10;color:#fff;
+      font:13px system-ui,-apple-system,sans-serif;background:rgba(0,0,0,.45);
+      padding:8px 10px;border-radius:10px;display:none
+    }
+    select,button,label{background:#1c1c1c;color:#fff;border:1px solid #333;border-radius:8px;padding:6px 8px}
+    button{cursor:pointer} label{display:inline-flex;align-items:center;gap:6px}
+    #hint{opacity:.8;border:none;background:transparent;padding:0}
+  </style>
+  <!-- Three.js (global build) -->
   <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://unpkg.com/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
 </head>
 <body>
-<canvas id="c"></canvas>
-<script>
-  const canvas = document.getElementById('c');
-  const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  <div id="ui">
+    <label for="world"><strong>World:</strong></label>
+    <select id="world">
+      <!-- Make sure this filename matches what’s in your R2 bucket -->
+      <option value="drone_scene_2025-09-19_metashape250_decimated.glb" selected>Decimated (250)</option>
+    </select>
+    <button id="reset">Reset view</button>
+    <label><input type="checkbox" id="autorotate"> Auto-rotate</label>
+    <label><input type="checkbox" id="showCube" checked> Show test cube</label>
+    <span id="hint">drag=orbit · wheel=zoom · right-drag=pan</span>
+  </div>
+  <div id="progress">Loading… 0%</div>
+  <canvas id="c"></canvas>
 
-  const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x111111);
+  <script>
+    // ✅ Your R2 base URL
+    const BASE_URL = 'https://pub-8cbedf6f909d4e39a938e2cee5080e7a.r2.dev/';
 
-  const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.01, 1000);
-  camera.position.set(3,2,3);
-
-  const amb = new THREE.AmbientLight(0xffffff, 0.6);
-  const dir = new THREE.DirectionalLight(0xffffff, 1.0);
-  dir.position.set(5,10,5);
-  scene.add(amb, dir);
-
-  const grid = new THREE.GridHelper(20, 20, 0x444444, 0x222222);
-  scene.add(grid);
-
-  const cube = new THREE.Mesh(
-    new THREE.BoxGeometry(1,1,1),
-    new THREE.MeshStandardMaterial({color:0x3366ff})
-  );
-  cube.position.y = 0.5; // sit on grid
-  scene.add(cube);
-
-  function onResize(){
-    camera.aspect = window.innerWidth/window.innerHeight;
-    camera.updateProjectionMatrix();
+    // Renderer
+    const canvas = document.getElementById('c');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
-  }
-  window.addEventListener('resize', onResize);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
 
-  (function loop(){
-    cube.rotation.y += 0.01;
-    renderer.render(scene, camera);
-    requestAnimationFrame(loop);
-  })();
-</script>
+    // Scene / Camera / Controls
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x111111);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.01, 10000);
+    camera.position.set(6,4,6);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.target.set(0,0,0);
+
+    // Lights
+    scene.add(new THREE.AmbientLight(0xffffff, 0.65));
+    const dir = new THREE.DirectionalLight(0xffffff, 1.0);
+    dir.position.set(10,20,10);
+    scene.add(dir);
+
+    // Always-visible references
+    const grid = new THREE.GridHelper(100,100,0x444444,0x222222);
+    scene.add(grid);
+    const axes = new THREE.AxesHelper(1.5);
+    scene.add(axes);
+
+    // Test cube
+    const cube = new THREE.Mesh(
+      new THREE.BoxGeometry(1,1,1),
+      new THREE.MeshStandardMaterial({ color:0x3366ff, roughness:0.8, metalness:0.1 })
+    );
+    cube.position.set(0.5,0.5,0.5);
+    scene.add(cube);
+
+    // Loader (global)
+    const loader = new THREE.GLTFLoader();
+    loader.crossOrigin = 'anonymous';
+
+    const worldSelect = document.getElementById('world');
+    const progressEl = document.getElementById('progress');
+    const autoEl = document.getElementById('autorotate');
+    const resetBtn = document.getElementById('reset');
+    const cubeToggle = document.getElementById('showCube');
+
+    let currentRoot = null;
+
+    function centerAndGround(object){
+      const box = new THREE.Box3().setFromObject(object);
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+      object.position.sub(center);                   // center at origin
+      const minY = box.min.y - center.y;            // sit on ground (Y=0)
+      object.position.y -= minY;
+      const dist = size.length() / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov)/2));
+      camera.position.set(dist*0.8, dist*0.5, dist*0.8);
+      controls.target.set(0, Math.max(size.y*0.5, 0), 0);
+      controls.update();
+    }
+
+    function clearCurrent(){
+      if(!currentRoot) return;
+      scene.remove(currentRoot);
+      currentRoot.traverse(o=>{
+        if(o.geometry) o.geometry.dispose?.();
+        if(o.material){
+          if(Array.isArray(o.material)) o.material.forEach(m=>m.dispose?.());
+          else o.material.dispose?.();
+        }
+        if(o.texture) o.texture.dispose?.();
+      });
+      currentRoot = null;
+    }
+
+    function loadWorld(filename){
+      clearCurrent();
+      progressEl.style.display = 'block';
+      progressEl.textContent = 'Loading… 0%';
+      const url = BASE_URL + filename;
+      console.log('[GLB] Loading:', url);
+
+      loader.load(
+        url,
+        (gltf)=>{
+          console.log('[GLB] Loaded OK');
+          progressEl.style.display = 'none';
+          currentRoot = gltf.scene || gltf.scenes[0];
+          scene.add(currentRoot);
+          // If it imports tilted, uncomment this:
+          // currentRoot.rotation.x = -Math.PI/2;
+          centerAndGround(currentRoot);
+        },
+        (xhr)=>{
+          if(xhr.total){
+            const pct = ((xhr.loaded/xhr.total)*100).toFixed(1);
+            progressEl.textContent = `Loading… ${pct}%`;
+          }else{
+            progressEl.textContent = `Loading… ${(xhr.loaded/1024/1024).toFixed(1)} MB`;
+          }
+        },
+        (err)=>{
+          console.error('[GLB] Load error:', err);
+          progressEl.textContent = 'Load error — open console';
+        }
+      );
+    }
+
+    // UI
+    resetBtn.addEventListener('click', ()=>{
+      if(currentRoot) centerAndGround(currentRoot);
+      else{
+        camera.position.set(6,4,6);
+        controls.target.set(0,0,0);
+        controls.update();
+      }
+    });
+    autoEl.addEventListener('change', ()=>{
+      controls.autoRotate = autoEl.checked;
+      controls.autoRotateSpeed = 1.0;
+    });
+    cubeToggle.addEventListener('change', ()=>{ cube.visible = cubeToggle.checked; });
+    worldSelect.addEventListener('change', ()=> loadWorld(worldSelect.value));
+
+    // Initial state
+    controls.autoRotate = false;
+    cube.visible = true;
+    loadWorld(worldSelect.value);
+
+    // Resize & render
+    window.addEventListener('resize', ()=>{
+      camera.aspect = window.innerWidth/window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    (function loop(){
+      controls.update();
+      renderer.render(scene, camera);
+      requestAnimationFrame(loop);
+    })();
+  </script>
 </body>
 </html>
