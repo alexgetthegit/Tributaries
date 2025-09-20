@@ -16,16 +16,16 @@
     #hint{opacity:.8;border:none;background:transparent;padding:0}
   </style>
 
-  <!-- ✅ Pin to r149 (works with non-module examples/js/*) -->
-  <script src="https://unpkg.com/three@0.149.0/build/three.min.js"></script>
-  <script src="https://unpkg.com/three@0.149.0/examples/js/controls/OrbitControls.js"></script>
-  <script src="https://unpkg.com/three@0.149.0/examples/js/loaders/GLTFLoader.js"></script>
+  <!-- ✅ Three.js r149 (non-module build + legacy extras) -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/examples/js/loaders/GLTFLoader.js"></script>
 </head>
 <body>
   <div id="ui">
     <label for="world"><strong>World:</strong></label>
     <select id="world">
-      <!-- Make sure this matches your R2 filename exactly -->
+      <!-- 🔁 Make sure this matches your exact filename in R2 -->
       <option value="drone_scene_2025-09-19_metashape250_decimated.glb" selected>Decimated (250)</option>
     </select>
     <button id="reset">Reset view</button>
@@ -37,7 +37,7 @@
   <canvas id="c"></canvas>
 
   <script>
-    // ✅ Your R2 base URL
+    // ✅ Your R2 bucket base URL
     const BASE_URL = 'https://pub-8cbedf6f909d4e39a938e2cee5080e7a.r2.dev/';
 
     // Renderer
@@ -130,7 +130,7 @@
           progressEl.style.display = 'none';
           currentRoot = gltf.scene || gltf.scenes[0];
           scene.add(currentRoot);
-          // If it imports tilted, you can fix once:
+          // If it imports tilted, uncomment this:
           // currentRoot.rotation.x = -Math.PI/2;
           centerAndGround(currentRoot);
         },
