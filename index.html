@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Drone Mesh Viewer (Debug)</title>
+  <title>Drone Mesh Viewer (R2)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     html,body{margin:0;height:100%;overflow:hidden;background:#222}
@@ -11,7 +11,6 @@
     #msg{position:fixed;left:12px;bottom:12px;background:rgba(0,0,0,.8);color:#fff;
          padding:8px 10px;border-radius:8px;font:13px/1.4 system-ui;display:none;max-width:70ch}
   </style>
-  <noscript><div style="color:#fff;padding:12px">JavaScript is disabled.</div></noscript>
 </head>
 <body>
   <div id="ui">
@@ -24,16 +23,15 @@
   <script type="module">
     console.log("🔹 script boot");
 
-    // Use esm.sh so sub-imports resolve automatically (avoids “module name 'three'” errors)
     import * as THREE from 'https://esm.sh/three@0.160.0';
     import { OrbitControls } from 'https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js';
     import { GLTFLoader } from 'https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
-    // Meshopt later (only if you compress): import { MeshoptDecoder } from 'https://esm.sh/meshoptimizer@0.20.0/meshopt_decoder.module.js';
 
-    const URL_R2     = 'https://vr-media.213530cb73b35d04a603ed81bb497175.r2.dev/drone_scene_big.glb';
+    // ✅ Correct public URL for your file in R2
+    const URL_R2     = 'https://pub-8cbedf6990d4e39a938e2cee5080e7a.r2.dev/vr-media/drone_scene_big.glb';
     const URL_SAMPLE = 'https://modelviewer.dev/shared-assets/models/Astronaut.glb';
 
-    // Renderer
+    // renderer
     const renderer = new THREE.WebGLRenderer({ antialias:true });
     renderer.setSize(innerWidth, innerHeight);
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -41,7 +39,7 @@
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     document.body.appendChild(renderer.domElement);
 
-    // Scene / camera / controls
+    // scene/camera/controls
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x333333);
     const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 10000);
@@ -49,11 +47,11 @@
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
 
-    // Lights
+    // lights
     scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.0));
     const dir = new THREE.DirectionalLight(0xffffff, 1.2); dir.position.set(10,20,10); scene.add(dir);
 
-    // Always-visible debug
+    // debug helpers
     scene.add(new THREE.GridHelper(50,50,0x666666,0x333333));
     scene.add(new THREE.AxesHelper(5));
     const cube = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), new THREE.MeshStandardMaterial({color:0x33aaff}));
@@ -65,7 +63,6 @@
     const hideMsg = () => { msg.style.display = 'none'; };
 
     const loader = new GLTFLoader();
-    // If meshopt later: loader.setMeshoptDecoder(MeshoptDecoder);
 
     function centerAndFrame(object){
       const box = new THREE.Box3().setFromObject(object);
@@ -99,7 +96,6 @@
           // keep lights/helpers/cube; remove prior models
           scene.children = scene.children.filter(n => n === cube || n.isLight || n.type.includes('Helper'));
           scene.add(model);
-          // material safety
           model.traverse(o=>{
             if(!o.isMesh) return;
             if (o.geometry && !o.geometry.attributes.normal) o.geometry.computeVertexNormals();
